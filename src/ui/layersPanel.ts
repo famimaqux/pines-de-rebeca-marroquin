@@ -6,6 +6,7 @@ import { checkpoint, current, editTargets, emit } from '../state';
 import { fmtNum, h, uniqueId } from './dom';
 import { toast } from './toast';
 import { applyWithScope } from './applyScope';
+import { bgGallery, ringGallery, wordArtGallery } from './galleries';
 import { copyAdjust, copyBackground, copyCutout, copyRing, copyStickers, copyTextStyle } from '../model/styleCopy';
 
 /** Botón "🎯 Aplicar … a otros pines": copia esa parte del pin actual con el cuadro de alcance. */
@@ -163,6 +164,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
       title: '1 · Fondo',
       open: true,
       controls: [
+        { kind: 'custom', build: bgGallery },
         {
           kind: 'image',
           path: 'bg.imageId',
@@ -359,6 +361,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
       id: 'borde',
       title: '5 · Borde / aro',
       controls: [
+        { kind: 'custom', build: ringGallery },
         {
           kind: 'select',
           path: 'ring.type',
@@ -395,6 +398,20 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
         { kind: 'text', path: 'text.middle', label: 'Nombre o texto del centro', placeholder: 'Ej.: Valentina', wide: true },
         { kind: 'text', path: 'text.top', label: 'Texto de arriba (curvo)', placeholder: 'Ej.: Feliz cumple' },
         { kind: 'text', path: 'text.bottom', label: 'Texto de abajo (curvo)', placeholder: 'Ej.: 5 añitos' },
+        { kind: 'custom', build: wordArtGallery },
+        {
+          kind: 'select',
+          path: 'text.shape',
+          label: 'Forma del texto del centro (WordArt)',
+          options: [
+            ['recto', 'Recto'],
+            ['arcoArriba', 'Arco hacia arriba ⌒'],
+            ['arcoAbajo', 'Arco hacia abajo ⌣'],
+            ['onda', 'Onda ∿'],
+          ],
+          show: (d) => !!d.text.middle,
+        },
+        { kind: 'range', path: 'text.bend', label: 'Curvatura', min: 0.05, max: 1, step: 0.05, pct: true, show: (d) => !!d.text.middle && d.text.shape !== 'recto' },
         { kind: 'custom', build: letteringGallery },
         { kind: 'select', path: 'text.font', label: 'Fuente', options: FONTS.map((f) => [f.family, f.family]), font: true },
         {
@@ -416,6 +433,9 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
         { kind: 'check', path: 'text.outline', label: 'Contorno', show: (d) => d.text.fill !== 'contorno' },
         { kind: 'color', path: 'text.outlineColor', label: 'Color del contorno', show: (d) => d.text.outline || d.text.fill === 'contorno' },
         { kind: 'range', path: 'text.outlineWidth', label: 'Grosor del contorno', min: 0.03, max: 0.5, step: 0.01, show: (d) => d.text.outline || d.text.fill === 'contorno' },
+        { kind: 'check', path: 'text.outline2', label: 'Segundo contorno (por fuera, estilo WordArt)' },
+        { kind: 'color', path: 'text.outline2Color', label: 'Color del 2.º contorno', show: (d) => d.text.outline2 },
+        { kind: 'range', path: 'text.outline2Width', label: 'Grosor del 2.º contorno', min: 0.03, max: 0.4, step: 0.01, show: (d) => d.text.outline2 },
         {
           kind: 'select',
           path: 'text.effect',

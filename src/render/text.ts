@@ -153,7 +153,14 @@ export function paintGlyphs(ctx: Ctx, glyphs: Glyph[], t: TextLayer, fs: number)
     ctx.shadowOffsetY = 0;
   }
 
-  // 2) Contorno
+  // 2) Segundo contorno (por fuera del primero)
+  if (t.outline2) {
+    ctx.strokeStyle = t.outline2Color;
+    ctx.lineWidth = outlineW + fs * Math.max(0.03, t.outline2Width ?? 0.12) * 2;
+    each((g) => ctx.strokeText(g.c, 0, 0));
+  }
+
+  // 2b) Contorno
   if (outlineW) {
     ctx.strokeStyle = t.outlineColor;
     ctx.lineWidth = outlineW;
@@ -182,6 +189,35 @@ export function paintGlyphs(ctx: Ctx, glyphs: Glyph[], t: TextLayer, fs: number)
     });
   }
   ctx.restore();
+}
+
+/**
+ * Texto del centro con forma WordArt: recto, arco hacia arriba (sonrisa
+ * invertida), arco hacia abajo o en onda. `bend` 0..1 dice cuánto se curva.
+ */
+export function layoutShaped(ctx: Ctx, text: string, y: number, maxW: number, fs: number, shape: 'recto' | 'arcoArriba' | 'arcoAbajo' | 'onda', bend: number): Glyph[] {
+  const line = layoutLine(ctx, text, y, maxW);
+  if (shape === 'recto' || !line.length) return line;
+  const b = Math.max(0.05, Math.min(1, bend));
+  const half = Math.max(1, Math.max(...line.map((g) => Math.abs(g.x))) + fs * 0.3);
+  if (shape === 'onda') {
+    const amp = fs * 0.55 * b;
+    const k = Math.PI / half; // una onda completa a lo ancho
+    return line.map((g) => {
+      const dy = Math.sin(g.x * k) * amp;
+      const slope = Math.cos(g.x * k) * amp * k;
+      return { ...g, y: g.y + dy, rot: Math.atan(slope) };
+    });
+  }
+  // Arco: las letras siguen un círculo cuya flecha (altura) depende de `bend`.
+  const sag = Math.max(0.5, half * 0.6 * b);
+  const r = (half * half + sag * sag) / (2 * sag);
+  const up = shape === 'arcoArriba';
+  return line.map((g) => {
+    const a = Math.asin(Math.max(-1, Math.min(1, g.x / r)));
+    const dy = r - Math.cos(a) * r; // cuánto baja desde el centro del arco
+    return { ...g, x: Math.sin(a) * r, y: up ? g.y - sag / 2 + dy : g.y + sag / 2 - dy, rot: up ? a : -a };
+  });
 }
 
 /** Capa 6: textos de arriba, abajo y centro. */
@@ -217,7 +253,7 @@ export function drawTexts(ctx: Ctx, d: Design, size: PinSize): void {
     const ms = Math.max(0.5, t.middleSize);
     ctx.font = fontCss(t.font, ms);
     const maxW = size.faceW * (size.shape === 'heart' ? 0.72 : 0.84) - 2 * ringInset(d);
-    paintGlyphs(ctx, layoutLine(ctx, t.middle, t.middleY, maxW), t, ms);
+    paintGlyphs(ctx, layoutShaped(ctx, t.middle, t.middleY, maxW, ms, t.shape ?? 'recto', t.bend ?? 0.5), t, ms);
   }
   ctx.restore();
 }

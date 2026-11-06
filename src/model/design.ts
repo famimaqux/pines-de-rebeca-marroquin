@@ -82,6 +82,8 @@ export interface RingLayer {
 /** Cómo se rellenan las letras. */
 export type TextFill = 'solido' | 'degradado' | 'arcoiris' | 'alternado' | 'porLetra' | 'contorno';
 export type TextEffect = 'ninguno' | 'sombra' | '3d' | 'neon' | 'brillo';
+/** Forma WordArt del texto del centro. */
+export type TextShape = 'recto' | 'arcoArriba' | 'arcoAbajo' | 'onda';
 
 export interface TextLayer {
   /** Texto curvo de arriba (recto en formas no redondas). */
@@ -107,6 +109,15 @@ export interface TextLayer {
   outlineColor: string;
   /** grosor del contorno, relativo al tamaño de letra (0.05..0.5) */
   outlineWidth: number;
+  /** segundo contorno, por fuera del primero (estilo WordArt) */
+  outline2: boolean;
+  outline2Color: string;
+  /** grosor del segundo contorno, relativo al tamaño de letra */
+  outline2Width: number;
+  /** forma del texto del centro */
+  shape: TextShape;
+  /** cuánto se curva (arco u onda), 0..1 */
+  bend: number;
   effect: TextEffect;
   effectColor: string;
   /** cuánto se mete hacia el centro, mm */
@@ -210,6 +221,11 @@ export function newDesign(sizeId: string, imageId: string | null = null): Design
       outline: true,
       outlineColor: '#ffffff',
       outlineWidth: 0.22,
+      outline2: false,
+      outline2Color: '#2e1065',
+      outline2Width: 0.12,
+      shape: 'recto',
+      bend: 0.5,
       effect: 'ninguno',
       effectColor: '#7a1b4a',
       inset: 1.5,
