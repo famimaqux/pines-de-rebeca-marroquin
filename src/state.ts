@@ -1,6 +1,7 @@
 import { newDesign, type Design } from './model/design';
 import { DEFAULT_SIZE_ID, loadSizes, saveSizes, type PinSize } from './model/sizes';
-import type { PageSettings } from './layout/pack';
+import type { PackAlgo, PageSettings } from './layout/pack';
+import { loadPaper, paperSize, savePaper, type PaperSettings } from './model/paper';
 import { DEFAULT_GUIDES, type GuideSettings } from './render/sheet';
 
 /**
@@ -12,12 +13,27 @@ import { DEFAULT_GUIDES, type GuideSettings } from './render/sheet';
 export type DragTarget = 'image' | 'bg' | 'sticker';
 export type BrushMode = 'off' | 'erase' | 'restore';
 
+/** Ajustes de acomodo (el tamaño del papel sale de `paper`). */
+export interface PageOptions {
+  margin: number;
+  gap: number;
+  algo: PackAlgo;
+}
+
 export interface AppState {
+  paper: PaperSettings;
+  /** hoja que se ve en pantalla (0 = la primera) */
+  sheet: number;
+  /** zoom de la hoja: 0 = ajustar a la pantalla; si no, px por mm */
+  zoom: number;
+  showRuler: boolean;
+  /** panel lateral del editor abierto */
+  editorOpen: boolean;
   sizes: PinSize[];
   designs: Design[];
   selId: number | null;
   defSizeId: string;
-  page: PageSettings;
+  page: PageOptions;
   guides: GuideSettings;
   /** copias por hoja (índice de hoja → número de veces) */
   copies: number[];
@@ -27,6 +43,11 @@ export interface AppState {
 }
 
 export const state: AppState = {
+  paper: loadPaper(),
+  sheet: 0,
+  zoom: 0,
+  showRuler: true,
+  editorOpen: false,
   sizes: loadSizes(),
   designs: [],
   selId: null,
@@ -44,7 +65,7 @@ export type ChangeKind =
   | 'design'
   /** cambió la lista de diseños, cantidades o la selección */
   | 'list'
-  /** cambió la configuración de la hoja */
+  /** cambió la configuración de la hoja o del papel */
   | 'page'
   /** cambiaron los moldes */
   | 'sizes'
@@ -72,6 +93,17 @@ export function emit(...kinds: ChangeKind[]): void {
     pendingKinds = new Set();
     listeners.forEach((l) => l(ks));
   });
+}
+
+/** Ajustes completos de la hoja (papel + márgenes + modo). */
+export function pageSettings(): PageSettings {
+  return { ...paperSize(state.paper), ...state.page };
+}
+
+export function setPaper(p: Partial<PaperSettings>): void {
+  state.paper = { ...state.paper, ...p };
+  savePaper(state.paper);
+  emit('page');
 }
 
 export const current = (): Design | null => state.designs.find((d) => d.id === state.selId) ?? null;

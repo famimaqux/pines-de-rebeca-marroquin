@@ -1,6 +1,6 @@
 import type { Design } from '../model/design';
 import type { PinSize } from '../model/sizes';
-import { A4, type Page } from '../layout/pack';
+import type { Page } from '../layout/pack';
 import { drawPin, traceSized, type PinImages } from './drawPin';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -19,6 +19,9 @@ export interface GuideSettings {
 export const DEFAULT_GUIDES: GuideSettings = { cut: true, cutW: 0.25, cutColor: '#7a7a7a', dashed: false, center: true, ruler: true };
 
 export interface SheetContext {
+  /** tamaño del papel, mm */
+  paperW: number;
+  paperH: number;
   designs: Map<number, Design>;
   sizes: Map<string, PinSize>;
   images: (d: Design) => PinImages;
@@ -51,9 +54,9 @@ export function drawCenterMark(ctx: Ctx): void {
 }
 
 /** Regla de 50 mm en el margen inferior: sirve para comprobar que se imprimió al 100 %. */
-export function drawRuler(ctx: Ctx, margin: number, label: string): void {
+export function drawRuler(ctx: Ctx, paperH: number, margin: number, label: string): void {
   if (margin < 3.5) return;
-  const y = A4.h - margin / 2;
+  const y = paperH - margin / 2;
   ctx.save();
   ctx.strokeStyle = '#888';
   ctx.fillStyle = '#888';
@@ -82,16 +85,16 @@ export interface RenderSheetOptions {
   pageCount?: number;
 }
 
-/** Dibuja una hoja A4 completa en un contexto escalado a mm. */
+/** Dibuja una hoja completa en un contexto escalado a mm. */
 export function drawSheet(ctx: Ctx, page: Page, sc: SheetContext, o: RenderSheetOptions): void {
   ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, A4.w, A4.h);
+  ctx.fillRect(0, 0, sc.paperW, sc.paperH);
   if (o.marginBox) {
     ctx.save();
     ctx.strokeStyle = '#f0c6d6';
     ctx.lineWidth = 0.3;
     ctx.setLineDash([2, 2]);
-    ctx.strokeRect(sc.margin, sc.margin, A4.w - 2 * sc.margin, A4.h - 2 * sc.margin);
+    ctx.strokeRect(sc.margin, sc.margin, sc.paperW - 2 * sc.margin, sc.paperH - 2 * sc.margin);
     ctx.restore();
   }
   for (const it of page.items) {
@@ -105,7 +108,7 @@ export function drawSheet(ctx: Ctx, page: Page, sc: SheetContext, o: RenderSheet
     if (o.guides && sc.guides.center) drawCenterMark(ctx);
     ctx.restore();
   }
-  if (o.guides && sc.guides.ruler) drawRuler(ctx, sc.margin, rulerLabel(o.pageNumber, o.pageCount));
+  if (o.guides && sc.guides.ruler) drawRuler(ctx, sc.paperH, sc.margin, rulerLabel(o.pageNumber, o.pageCount));
 }
 
 export function rulerLabel(n?: number, total?: number): string {
@@ -115,8 +118,8 @@ export function rulerLabel(n?: number, total?: number): string {
 /** Crea un canvas con la hoja a `ppm` píxeles por mm (300 ppp = 300/25.4). */
 export function renderSheetCanvas(page: Page, sc: SheetContext, ppm: number, o: RenderSheetOptions): HTMLCanvasElement {
   const c = document.createElement('canvas');
-  c.width = Math.round(A4.w * ppm);
-  c.height = Math.round(A4.h * ppm);
+  c.width = Math.round(sc.paperW * ppm);
+  c.height = Math.round(sc.paperH * ppm);
   const ctx = c.getContext('2d')!;
   ctx.scale(ppm, ppm);
   drawSheet(ctx, page, sc, o);

@@ -1,5 +1,6 @@
 /**
- * Acomodo automático de pines en hojas A4 (todo en mm).
+ * Acomodo automático de pines en hojas de papel (todo en mm).
+ * Funciona con cualquier tamaño y orientación de papel.
  * - Cuadrícula ordenada: filas ("estantes"), fácil de cortar.
  * - Tresbolillo apretado: círculos tangentes (cada uno se apoya en dos vecinos).
  * - Automático: el que use menos hojas (empate → cuadrícula).
@@ -12,6 +13,9 @@ export const A4 = { w: 210, h: 297 } as const;
 export type PackAlgo = 'auto' | 'grid' | 'hex';
 
 export interface PageSettings {
+  /** tamaño del papel (ya con la orientación aplicada), mm */
+  w: number;
+  h: number;
   margin: number;
   gap: number;
   algo: PackAlgo;
@@ -58,7 +62,7 @@ const E = 1e-6;
 export const newPage = (): Page => ({ items: [], shelves: [], fail: Infinity });
 
 function usable(s: PageSettings) {
-  return { x0: s.margin, y0: s.margin, x1: A4.w - s.margin, y1: A4.h - s.margin };
+  return { x0: s.margin, y0: s.margin, x1: s.w - s.margin, y1: s.h - s.margin };
 }
 
 /** Busca la posición más arriba (y luego más a la izquierda) donde quepa un círculo de radio r. */
@@ -235,7 +239,7 @@ const capCache = new Map<string, number>();
 
 /** Capacidad máxima de una hoja vacía para un molde. */
 export function capacity(probe: Omit<PackItem, 'order' | 'designId'>, algo: 'grid' | 'hex', s: PageSettings): number {
-  const k = [probe.w, probe.h, probe.r, s.margin, s.gap, algo].join('|');
+  const k = [probe.w, probe.h, probe.r, s.w, s.h, s.margin, s.gap, algo].join('|');
   let v = capCache.get(k);
   if (v === undefined) {
     v = countFit(newPage(), probe, algo, s);

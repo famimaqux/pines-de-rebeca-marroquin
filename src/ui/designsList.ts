@@ -1,4 +1,4 @@
-import { cloneDesign, newDesign, type Design } from '../model/design';
+import { cloneDesign, newDesign } from '../model/design';
 import { applyPreset } from '../model/presets';
 import { MAX_QTY } from '../layout/sheets';
 import { addImageBlob } from '../image/store';
@@ -8,11 +8,7 @@ import { renderThumb } from './preview';
 import { imagesFor } from './resources';
 import { toast } from './toast';
 
-export interface DesignsListHooks {
-  /** Botones extra por diseño (Llenar 1 hoja, etc.), los agrega la etapa del acomodo. */
-  qtyActions?: (d: Design) => HTMLElement | null;
-}
-
+/** Agrega imágenes: cada una se convierte en un pin del tamaño por defecto. */
 export async function addFiles(files: Iterable<File>): Promise<void> {
   const list = [...files].filter((f) => f.type.startsWith('image/'));
   if (!list.length) return;
@@ -27,54 +23,15 @@ export async function addFiles(files: Iterable<File>): Promise<void> {
       toast(`No se pudo leer ${f.name}`);
     }
   }
-  if (ok) toast(`${ok} imagen(es) agregada(s) en ${sizeById(state.defSizeId).name}`);
+  if (ok) toast(`${ok} imagen(es) agregada(s) como pines de ${sizeById(state.defSizeId).name}`);
 }
 
-export function createDesignsList(hooks: DesignsListHooks = {}): HTMLElement {
-  const file = h('input', { type: 'file', accept: 'image/*', multiple: true, class: 'visually-hidden', id: 'add-files' });
-  file.addEventListener('change', () => {
-    if (file.files) void addFiles(file.files);
-    file.value = '';
-  });
-  const drop = h(
-    'label',
-    { class: 'drop', for: 'add-files', tabindex: 0, role: 'button' },
-    h('strong', {}, '📷 Agregar imágenes'),
-    h('span', { class: 'muted small' }, 'Toca para elegir o arrastra aquí tus fotos (puedes elegir varias)'),
-  );
-  drop.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      file.click();
-    }
-  });
-  // Arrastrar y soltar archivos en toda la página.
-  let depth = 0;
-  document.addEventListener('dragenter', (e) => {
-    if (!e.dataTransfer?.types.includes('Files')) return;
-    depth++;
-    drop.classList.add('over');
-  });
-  document.addEventListener('dragleave', () => {
-    if (--depth <= 0) {
-      depth = 0;
-      drop.classList.remove('over');
-    }
-  });
-  document.addEventListener('dragover', (e) => {
-    if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
-  });
-  document.addEventListener('drop', (e) => {
-    if (!e.dataTransfer?.files.length) return;
-    e.preventDefault();
-    depth = 0;
-    drop.classList.remove('over');
-    void addFiles(e.dataTransfer.files);
-  });
+export interface StripHooks {
+  openEditor: () => void;
+}
 
-  const defSize = h('select', { id: 'def-size' });
-  defSize.addEventListener('change', () => (state.defSizeId = defSize.value));
-
+/** Tira de miniaturas: seleccionar, cantidad, editar, duplicar y borrar. */
+export function createDesignsStrip(hooks: StripHooks): HTMLElement {
   const blank = h(
     'button',
     {
@@ -86,9 +43,10 @@ export function createDesignsList(hooks: DesignsListHooks = {}): HTMLElement {
         applyPreset(d, 'Kawaii');
         d.text.middle = 'Tu nombre';
         addDesign(d);
+        hooks.openEditor();
       },
     },
-    '＋ Diseño sin imagen',
+    '＋ Pin sin imagen',
   );
   const clearBtn = h('button', { type: 'button', class: 'btn ghost small danger' }, 'Vaciar todo');
   clearBtn.addEventListener('click', () => {
@@ -100,35 +58,57 @@ export function createDesignsList(hooks: DesignsListHooks = {}): HTMLElement {
     emit('list', 'design');
   });
 
-  const list = h('ul', { class: 'designs', 'aria-label': 'Tus diseños' });
-  const count = h('p', { class: 'muted small' });
-
+  const list = h('ul', { class: 'strip', 'aria-label': 'Tus diseños' });
+  const count = h('span', { class: 'muted small' });
   const thumbs = new Map<number, HTMLCanvasElement>();
 
   function renderList() {
-    defSize.replaceChildren(...state.sizes.map((s) => h('option', { value: s.id, selected: s.id === state.defSizeId }, s.name)));
     thumbs.clear();
     const total = state.designs.reduce((a, d) => a + Math.max(0, d.qty), 0);
-    count.textContent = state.designs.length ? `${state.designs.length} diseño(s) · ${total} pin(es) en total` : 'Todavía no hay diseños.';
+    count.textContent = state.designs.length ? `${state.designs.length} diseño(s) · ${total} pin(es)` : 'Todavía no hay diseños';
     list.replaceChildren(
       ...state.designs.map((d, i) => {
         const s = sizeById(d.sizeId);
         const c = h('canvas', { 'aria-hidden': 'true' });
         thumbs.set(d.id, c);
-        const qty = h('input', { type: 'number', min: 0, max: MAX_QTY, value: String(d.qty), class: 'num', 'aria-label': `Cantidad del diseño ${i + 1}` });
+        const label = d.text.middle || d.text.top || d.text.bottom || `Diseño ${i + 1}`;
+        const qty = h('input', { type: 'number', min: 0, max: MAX_QTY, value: String(d.qty), class: 'num', 'aria-label': `Cantidad de ${label}` });
         qty.addEventListener('change', () => {
           checkpoint();
           d.qty = Math.max(0, Math.min(MAX_QTY, Math.floor(Number(qty.value) || 0)));
           qty.value = String(d.qty);
           emit('list');
         });
-        qty.addEventListener('click', (e) => e.stopPropagation());
-        const label = d.text.middle || d.text.top || d.text.bottom || `Diseño ${i + 1}`;
-        const sel = h(
+        const pick = h(
           'button',
-          { type: 'button', class: 'pick', 'aria-pressed': String(d.id === state.selId), onclick: () => ((state.selId = d.id), emit('list', 'design', 'view')) },
+          {
+            type: 'button',
+            class: 'pick',
+            title: `${label} · ${s.name} (doble clic para editar)`,
+            'aria-pressed': String(d.id === state.selId),
+            onclick: () => {
+              state.selId = d.id;
+              emit('list', 'design', 'view');
+            },
+            ondblclick: () => hooks.openEditor(),
+          },
           c,
-          h('span', { class: 'meta' }, h('strong', {}, label), h('span', { class: 'muted small' }, s.name)),
+          h('span', { class: 'meta' }, h('strong', {}, label), h('span', { class: 'muted small' }, s.shape === 'circle' ? `${s.faceW} mm` : s.name)),
+        );
+        const edit = h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn-icon',
+            title: 'Editar',
+            'aria-label': `Editar ${label}`,
+            onclick: () => {
+              state.selId = d.id;
+              emit('list', 'design', 'view');
+              hooks.openEditor();
+            },
+          },
+          '✎',
         );
         const dup = h(
           'button',
@@ -164,23 +144,17 @@ export function createDesignsList(hooks: DesignsListHooks = {}): HTMLElement {
           },
           '🗑',
         );
-        const extra = hooks.qtyActions?.(d) ?? null;
         return h(
           'li',
           { class: d.id === state.selId ? 'item on' : 'item' },
-          sel,
-          h('div', { class: 'item-actions' }, h('label', { class: 'mini inline' }, h('span', {}, '×'), qty), dup, del),
-          extra,
+          pick,
+          h('div', { class: 'item-actions' }, h('label', { class: 'mini inline' }, h('span', {}, '×'), qty), edit, dup, del),
         );
       }),
     );
-    updateThumbs();
-  }
-
-  function updateThumbs() {
     for (const d of state.designs) {
       const c = thumbs.get(d.id);
-      if (c) renderThumb(c, d, sizeById(d.sizeId), imagesFor(d));
+      if (c) renderThumb(c, d, sizeById(d.sizeId), imagesFor(d), 48);
     }
   }
 
@@ -189,24 +163,10 @@ export function createDesignsList(hooks: DesignsListHooks = {}): HTMLElement {
     else if (k.has('design')) {
       const d = current();
       const c = d && thumbs.get(d.id);
-      if (d && c) renderThumb(c, d, sizeById(d.sizeId), imagesFor(d));
+      if (d && c) renderThumb(c, d, sizeById(d.sizeId), imagesFor(d), 48);
     }
   });
 
   renderList();
-  return h(
-    'section',
-    { class: 'card designs-card', 'aria-labelledby': 'designs-title' },
-    h('h2', { id: 'designs-title' }, 'Tus diseños'),
-    file,
-    drop,
-    h('div', { class: 'row wrap' }, h('label', { for: 'def-size' }, 'Tamaño para imágenes nuevas'), defSize),
-    h('div', { class: 'row wrap' }, blank, clearBtn),
-    count,
-    list,
-  );
-}
-
-export function refreshThumbs(): void {
-  emit('list');
+  return h('section', { class: 'card strip-card', 'aria-label': 'Tus diseños' }, h('div', { class: 'row wrap between' }, h('h2', {}, 'Tus diseños'), count, h('div', { class: 'row' }, blank, clearBtn)), list);
 }
