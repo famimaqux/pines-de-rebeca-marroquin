@@ -1,6 +1,8 @@
 import { cloneDesign, type Design } from '../model/design';
-import { PRESETS, applyPreset, copyStyle, scaleDesign } from '../model/presets';
-import { foldMargin } from '../model/sizes';
+import { PRESETS, applyPreset, scaleDesign } from '../model/presets';
+import { foldMargin, sizeOptionLabel } from '../model/sizes';
+import { applyWithScope } from './applyScope';
+import { copyStyleScaled } from '../model/styleCopy';
 import { effectivePpi } from '../render/drawPin';
 import { getImage } from '../image/store';
 import { canRedo, canUndo, checkpoint, current, emit, redo, sizeById, state, subscribe, undo, type BrushMode, type DragTarget } from '../state';
@@ -108,11 +110,8 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
         type: 'button',
         class: `chip preset-${name.normalize('NFD').replace(/[^\w]/g, '').toLowerCase()}`,
         onclick: () => {
-          const d = current();
-          if (!d) return;
-          checkpoint();
-          applyPreset(d, name);
-          emit('design');
+          if (!current()) return;
+          void applyWithScope({ title: `Estilo rápido “${name}”`, apply: (d) => applyPreset(d, name) });
         },
       },
       name,
@@ -126,13 +125,17 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
       onclick: () => {
         const d = current();
         if (!d || state.designs.length < 2) return toast('Necesitas al menos dos diseños');
-        checkpoint();
-        for (const z of state.designs) if (z !== d) copyStyle(d, z);
-        emit('design', 'list');
-        toast(`Estilo copiado a ${state.designs.length - 1} diseño(s), con la imagen de fondo`);
+        const src = structuredClone(d);
+        void applyWithScope({
+          title: 'Copiar el estilo de este pin (fondo, imagen de fondo, borde y letras)',
+          preferred: 'all',
+          apply: (z) => {
+            if (z.id !== src.id) copyStyleScaled(src, z);
+          },
+        });
       },
     },
-    '📋 Copiar estilo a todos',
+    '📋 Copiar estilo a…',
   );
   const allSizes = h(
     'button',
@@ -176,12 +179,18 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
     h('div', { class: 'row wrap' }, styleAll, allSizes, batchBtn),
   );
 
-  sizeSelect.addEventListener('change', () => {
+  sizeSelect.addEventListener('change', async () => {
     const d = current();
     if (!d) return;
-    checkpoint();
-    d.sizeId = sizeSelect.value;
-    emit('design', 'list');
+    const to = sizeById(sizeSelect.value);
+    const n = await applyWithScope({
+      title: `Cambiar el tamaño a ${to.name}`,
+      preferred: 'this',
+      apply: (z) => {
+        if (z.sizeId !== to.id) scaleDesign(z, sizeById(z.sizeId), to);
+      },
+    });
+    if (!n) emit('view');
   });
   finishedChk.addEventListener('change', () => {
     state.finished = finishedChk.checked;
@@ -220,7 +229,7 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
   function refreshControls() {
     const d = current();
     title.textContent = d ? `Editor · ${sizeById(d.sizeId).name}` : 'Editor';
-    sizeSelect.replaceChildren(...state.sizes.map((s) => h('option', { value: s.id, selected: d?.sizeId === s.id }, s.name)));
+    sizeSelect.replaceChildren(...state.sizes.map((s) => h('option', { value: s.id, selected: d?.sizeId === s.id }, sizeOptionLabel(s))));
     sizeSelect.disabled = !d;
     finishedChk.checked = state.finished;
     targetBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(state.dragTarget === targets[i][0] && state.brush.mode === 'off')));

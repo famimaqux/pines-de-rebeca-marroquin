@@ -31,7 +31,10 @@ export interface AppState {
   editorOpen: boolean;
   sizes: PinSize[];
   designs: Design[];
+  /** pin que se edita en el panel lateral */
   selId: number | null;
+  /** pines seleccionados en la hoja (ids de diseño) */
+  selection: Set<number>;
   defSizeId: string;
   page: PageOptions;
   guides: GuideSettings;
@@ -51,6 +54,7 @@ export const state: AppState = {
   sizes: loadSizes(),
   designs: [],
   selId: null,
+  selection: new Set(),
   defSizeId: DEFAULT_SIZE_ID,
   page: { margin: 5, gap: 1.5, algo: 'auto' },
   guides: { ...DEFAULT_GUIDES },
@@ -149,9 +153,19 @@ export function checkpoint(group = ''): void {
   lastGroup = group;
 }
 
+/** Guarda en el historial un estado anterior ya tomado (para cambios con vista previa). */
+export function checkpointFrom(designsJson: string, selId: number | null): void {
+  undoStack.push({ designs: designsJson, selId });
+  if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  redoStack.length = 0;
+  lastGroup = '';
+  lastPush = Date.now();
+}
+
 function restore(s: Snapshot): void {
   state.designs = JSON.parse(s.designs) as Design[];
   state.selId = s.selId && state.designs.some((d) => d.id === s.selId) ? s.selId : (state.designs[0]?.id ?? null);
+  for (const id of state.selection) if (!state.designs.some((d) => d.id === id)) state.selection.delete(id);
   lastGroup = '';
   emit('list', 'design');
 }

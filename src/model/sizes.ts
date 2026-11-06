@@ -72,6 +72,23 @@ export function sanitizeSize(raw: Partial<PinSize>): PinSize | null {
   };
 }
 
+const cmTxt = (mm: number) => (mm / 10).toLocaleString('es', { maximumFractionDigits: 2 });
+
+/**
+ * Texto de la lista de tamaños, en mm y cm, con el corte:
+ * "58 mm · 5,8 cm (corte 7 cm)" o "Corazón 5,7 × 5,2 cm (corte 6,8 × 6,3 cm)".
+ */
+export function sizeOptionLabel(s: PinSize): string {
+  let t: string;
+  if (s.shape === 'circle') t = `${s.faceW} mm · ${cmTxt(s.faceW)} cm (corte ${cmTxt(s.cutW)} cm)`;
+  else t = `${SHAPE_LABELS[s.shape]} ${cmTxt(s.faceW)} × ${cmTxt(s.faceH)} cm (corte ${cmTxt(s.cutW)} × ${cmTxt(s.cutH)} cm)`;
+  if (s.id === 'r58') t += ' ★ el más común';
+  if (s.id === 'r75') t += ' · requiere otro molde';
+  // Solo se antepone el nombre si la usuaria le puso uno propio.
+  if (s.custom && s.name !== autoName(s.shape, s.faceW, s.faceH)) t = `${s.name} · ${t}`;
+  return t;
+}
+
 export function autoName(shape: Shape, faceW: number, faceH: number): string {
   if (shape === 'circle') return `Redondo ${faceW} mm`;
   return `${SHAPE_LABELS[shape]} ${faceW}×${faceH}`;

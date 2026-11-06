@@ -5,6 +5,43 @@ import { layoutLine, paintGlyphs } from '../render/text';
 import { checkpoint, current, emit } from '../state';
 import { fmtNum, h, uniqueId } from './dom';
 import { toast } from './toast';
+import { applyWithScope } from './applyScope';
+import { copyAdjust, copyBackground, copyCutout, copyRing, copyStickers, copyTextStyle } from '../model/styleCopy';
+
+/** Botón "🎯 Aplicar … a otros pines": copia esa parte del pin actual con el cuadro de alcance. */
+function applyToOthers(what: string, copy: (src: Design, dst: Design, extra: boolean) => void, extra?: { label: string; checked: boolean }): Ctl {
+  return {
+    kind: 'custom',
+    build: () => {
+      const el = h(
+        'div',
+        { class: 'apply-row' },
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn ghost small',
+            onclick: () => {
+              const d = current();
+              if (!d) return;
+              const src = structuredClone(d);
+              void applyWithScope({
+                title: `Aplicar ${what} de este pin`,
+                preferred: 'sheet',
+                extra,
+                apply: (z, x) => {
+                  if (z.id !== src.id) copy(src, z, x);
+                },
+              });
+            },
+          },
+          `🎯 Aplicar ${what} a otros pines…`,
+        ),
+      );
+      return { el, refresh: () => {} };
+    },
+  };
+}
 
 /** Controles de las capas del pin, generados a partir de una descripción. */
 
@@ -65,11 +102,17 @@ function letteringGallery(): { el: HTMLElement; refresh: () => void } {
         onclick: () => {
           const d = current();
           if (!d) return;
-          checkpoint();
-          applyLettering(d, name);
-          if (!hasText(d)) d.text.middle = sample.value.trim() || 'Tu nombre';
-          emit('design');
-          toast(`Modelo de letra “${name}” aplicado`);
+          const word = sample.value.trim() || d.text.middle || d.text.bottom || d.text.top || 'Tu nombre';
+          void applyWithScope({
+            title: `Modelo de letra “${name}”`,
+            preferred: 'this',
+            extra: { label: `Poner también el mismo texto “${word}” en todos (si no, cada pin conserva su texto)`, checked: false },
+            apply: (z, sameText) => {
+              applyLettering(z, name);
+              if (sameText) z.text.middle = word;
+              else if (!hasText(z)) z.text.middle = word;
+            },
+          });
         },
       },
       canvas,
@@ -131,6 +174,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
         { kind: 'range', path: 'bg.oy', label: 'Mover ↕', min: -50, max: 50, step: 0.5, unit: 'mm', reset: 0 },
         { kind: 'range', path: 'bg.zoom', label: 'Zoom', min: 0.3, max: 4, step: 0.05, unit: '×', reset: 1 },
         { kind: 'range', path: 'bg.rot', label: 'Girar', min: -180, max: 180, step: 1, unit: '°', reset: 0 },
+        applyToOthers('el fondo y el patrón', (s, z) => copyBackground(s, z)),
       ],
     },
     {
@@ -154,6 +198,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
         { kind: 'color', path: 'pattern.color', label: 'Color', show: hasPattern },
         { kind: 'range', path: 'pattern.alpha', label: 'Opacidad', min: 0.05, max: 1, step: 0.05, pct: true, show: hasPattern },
         { kind: 'range', path: 'pattern.scale', label: 'Escala', min: 3, max: 20, step: 0.5, unit: 'mm', show: hasPattern },
+        applyToOthers('el fondo y el patrón', (s, z) => copyBackground(s, z)),
       ],
     },
     {
@@ -221,6 +266,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
           show: (d) => !hasImage(d),
           build: () => ({ el: h('p', { class: 'muted small span-all' }, 'Primero carga una foto en “Imagen principal”.'), refresh: () => {} }),
         },
+        { ...applyToOthers('el quitar fondo rápido', (s, z) => copyCutout(s, z)), show: (d: Design) => hasImage(d) && d.cutout.quick },
       ],
     },
     {
@@ -236,12 +282,12 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
                 type: 'button',
                 class: 'btn small',
                 onclick: () => {
-                  const d = current();
-                  if (!d) return;
-                  checkpoint();
-                  d.adjust = { ...EPSON_ADJUST };
-                  emit('design');
-                  toast('Optimizado para Epson L8050: +4 % brillo, +8 % contraste, +15 % saturación, nitidez 0,35. Desactiva PhotoEnhance al imprimir.', 5000);
+                  if (!current()) return;
+                  void applyWithScope({
+                    title: 'Optimizar para Epson L8050 (+4 % brillo, +8 % contraste, +15 % saturación, nitidez 0,35)',
+                    preferred: 'all',
+                    apply: (z) => (z.adjust = { ...EPSON_ADJUST }),
+                  }).then((n) => n && toast('Recuerda desactivar PhotoEnhance al imprimir.', 4000));
                 },
               },
               '✨ Optimizar para Epson L8050',
@@ -252,11 +298,8 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
                 type: 'button',
                 class: 'btn ghost small',
                 onclick: () => {
-                  const d = current();
-                  if (!d) return;
-                  checkpoint();
-                  d.adjust = { ...NEUTRAL_ADJUST };
-                  emit('design');
+                  if (!current()) return;
+                  void applyWithScope({ title: 'Quitar la mejora de impresión', preferred: 'this', apply: (z) => (z.adjust = { ...NEUTRAL_ADJUST }) });
                 },
               },
               'Restablecer',
@@ -268,6 +311,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
         { kind: 'range', path: 'adjust.contrast', label: 'Contraste', min: 0.5, max: 1.8, step: 0.01, pct: true, reset: 1 },
         { kind: 'range', path: 'adjust.sat', label: 'Saturación', min: 0, max: 2, step: 0.01, pct: true, reset: 1 },
         { kind: 'range', path: 'adjust.sharp', label: 'Nitidez', min: 0, max: 1, step: 0.05, reset: 0 },
+        applyToOthers('la mejora de impresión', (s, z) => copyAdjust(s, z)),
       ],
     },
     {
@@ -300,6 +344,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
         },
         { kind: 'color', path: 'ring.color', label: 'Color', show: (d) => hasRing(d) && d.ring.finish === 'plano' },
         { kind: 'range', path: 'ring.width', label: 'Grosor', min: 0.3, max: 10, step: 0.1, unit: 'mm', show: hasRing },
+        applyToOthers('el borde', (s, z) => copyRing(s, z)),
       ],
     },
     {
@@ -347,6 +392,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
         { kind: 'range', path: 'text.middleY', label: 'Altura del centro', min: -30, max: 30, step: 0.25, unit: 'mm', show: (d) => !!d.text.middle, reset: 0 },
         { kind: 'range', path: 'text.size', label: 'Tamaño arriba/abajo', min: 2, max: 14, step: 0.25, unit: 'mm', show: (d) => !!(d.text.top || d.text.bottom) },
         { kind: 'range', path: 'text.inset', label: 'Hacia el centro', min: -3, max: 12, step: 0.25, unit: 'mm', show: (d) => !!(d.text.top || d.text.bottom) },
+        applyToOthers('el estilo de letras', (s, z, withText) => copyTextStyle(s, z, withText), { label: 'Aplicar también el texto (el mismo en todos)', checked: false }),
       ],
     },
   ];
@@ -553,7 +599,8 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
   for (const sec of SECTIONS) {
     el.append(h('details', { open: !!sec.open, id: `sec-${sec.id}` }, h('summary', {}, sec.title), h('div', { class: 'fields' }, ...sec.controls.map(field))));
   }
-  el.append(h('details', { id: 'sec-stickers' }, h('summary', {}, '7 · Stickers'), h('div', { class: 'fields' }, stickerList, addSticker)));
+  const stickersApply = field(applyToOthers('los stickers', (s, z) => copyStickers(s, z)));
+  el.append(h('details', { id: 'sec-stickers' }, h('summary', {}, '7 · Stickers'), h('div', { class: 'fields' }, stickerList, addSticker, stickersApply)));
 
   return {
     el,

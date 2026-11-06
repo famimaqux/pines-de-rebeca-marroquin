@@ -10,6 +10,10 @@ import { createLayersPanel } from './ui/layersPanel';
 import { createSheetView, qtyActions } from './ui/sheetView';
 import { createSizesPanel } from './ui/sizesPanel';
 import { toast } from './ui/toast';
+import { setSizeLookup } from './model/styleCopy';
+import { sizeById } from './state';
+
+setSizeLookup(sizeById);
 
 const app = document.querySelector<HTMLElement>('#app')!;
 

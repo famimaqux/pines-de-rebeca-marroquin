@@ -1,11 +1,16 @@
 import type { Design } from '../model/design';
 import { PAPERS, cm, fitsPrinter, paperShortName, paperSize, type PaperId } from '../model/paper';
 import { MAX_QTY, pageLabel, shortName } from '../layout/sheets';
+import { sizeOptionLabel, type PinSize } from '../model/sizes';
+import { scaleDesign } from '../model/presets';
+import { applyWithScope, askAgain, onScopePrefsChanged, scopePrefs } from './applyScope';
+import { SCOPE_LABELS } from '../model/scope';
+import { openCustomSize } from './customSize';
 import { capacityFor, currentLayout, sheetCopies } from '../layout/current';
 import type { Placed } from '../layout/pack';
 import { drawSheet, type SheetContext } from '../render/sheet';
 import { traceSized } from '../render/drawPin';
-import { checkpoint, emit, setPaper, sizeById, state, subscribe } from '../state';
+import { checkpoint, emit, setPaper, setSizes, sizeById, state, subscribe } from '../state';
 import { fmtNum, h } from './dom';
 import { addFiles } from './designsList';
 import { imagesFor } from './resources';
@@ -113,8 +118,38 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
       file.click();
     }
   });
-  const defSize = h('select', { id: 'def-size', 'aria-label': 'Tamaño de los pines nuevos' });
-  defSize.addEventListener('change', () => (state.defSizeId = defSize.value));
+  const defSize = h('select', { id: 'def-size', 'aria-label': 'Tamaño de pin' });
+  const sample = h('canvas', { class: 'size-sample', 'aria-hidden': 'true' });
+  const sampleTxt = h('span', { class: 'muted small size-sample-txt' });
+  defSize.addEventListener('change', async () => {
+    let to: PinSize | null = state.sizes.find((s) => s.id === defSize.value) ?? null;
+    if (defSize.value === '__custom') {
+      const made = await openCustomSize();
+      if (!made) return emit('view');
+      setSizes([...state.sizes, made]);
+      to = made;
+    }
+    if (!to) return;
+    state.defSizeId = to.id;
+    emit('view');
+    if (!state.designs.length) return toast(`Los pines nuevos serán de ${sizeOptionLabel(to)}`);
+    const target = to;
+    // Si hay pines seleccionados en la hoja se aplica directo a ellos.
+    await applyWithScope({
+      title: `Cambiar el tamaño a ${shortName(target)}`,
+      selectionFirst: true,
+      apply: (d) => {
+        if (d.sizeId !== target.id) scaleDesign(d, sizeById(d.sizeId), target);
+      },
+    });
+  });
+  // Indicador "aplicando sin preguntar"
+  const scopeChip = h('button', { type: 'button', class: 'chip scope-chip', hidden: true, onclick: () => askAgain() });
+  onScopePrefsChanged(() => {
+    const p = scopePrefs();
+    scopeChip.hidden = !p.dontAsk;
+    scopeChip.textContent = `🎯 Aplicando a: ${p.lastScope ? SCOPE_LABELS[p.lastScope] : ''} · volver a preguntar`;
+  });
 
   /* ---------- Acomodo ---------- */
   const algo = h(
@@ -188,7 +223,8 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
     'div',
     { class: 'toolbar card' },
     h('div', { class: 'tool-group' }, h('label', { for: 'paper' }, 'Papel'), paperSel, customBox, h('div', { class: 'segmented', role: 'group', 'aria-label': 'Orientación' }, ...orientBtns)),
-    h('div', { class: 'tool-group' }, file, addBtn, h('label', { for: 'def-size' }, 'Tamaño'), defSize),
+    h('div', { class: 'tool-group' }, file, addBtn),
+    h('div', { class: 'tool-group' }, h('label', { for: 'def-size' }, 'Tamaño de pin'), defSize, sample, sampleTxt, scopeChip),
     h('div', { class: 'tool-group' }, h('label', { for: 'pg-algo' }, 'Acomodo'), algo, pageOpts),
     h('div', { class: 'tool-group' }, zoomBox),
   );
@@ -264,7 +300,11 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
     }
     orientBtns[0].setAttribute('aria-pressed', String(state.paper.orientation === 'vertical'));
     orientBtns[1].setAttribute('aria-pressed', String(state.paper.orientation === 'horizontal'));
-    defSize.replaceChildren(...state.sizes.map((s) => h('option', { value: s.id, selected: s.id === state.defSizeId }, s.name)));
+    defSize.replaceChildren(
+      ...state.sizes.map((s) => h('option', { value: s.id, selected: s.id === state.defSizeId }, sizeOptionLabel(s))),
+      h('option', { value: '__custom' }, 'Personalizado… (escribo cara y corte en mm)'),
+    );
+    drawSample(sizeById(state.defSizeId));
     algo.value = state.page.algo === 'hex' ? 'auto' : state.page.algo;
     margin.value = String(state.page.margin);
     marginOut.textContent = `${fmtNum(state.page.margin)} mm`;
@@ -337,12 +377,12 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
     if (page) drawSheet(ctx, page, sc, { guides: true, marginBox: true, pageNumber: state.sheet + 1, pageCount: n });
     else drawSheet(ctx, { items: [], shelves: [], fail: Infinity }, sc, { guides: false, marginBox: true });
     // Resaltar los pines del diseño seleccionado
-    if (page && state.selId !== null) {
+    if (page && state.selection.size) {
       ctx.lineWidth = 2.2 / ppm;
       ctx.strokeStyle = '#e85d9a';
       ctx.setLineDash([6 / ppm, 4 / ppm]);
       for (const it of page.items) {
-        if (it.designId !== state.selId) continue;
+        if (!state.selection.has(it.designId)) continue;
         const s = sc.sizes.get(it.sizeId);
         if (!s) continue;
         ctx.save();
@@ -357,6 +397,31 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
 
     summaryText$.textContent = summaryText();
     editBtn.disabled = state.selId === null;
+  }
+
+  /** Círculo de muestra del tamaño elegido (escala fija: 88 mm = 44 px). */
+  function drawSample(s: PinSize) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const px = 46;
+    sample.width = sample.height = px * dpr;
+    sample.style.width = sample.style.height = `${px}px`;
+    const c = sample.getContext('2d')!;
+    const k = (px * dpr) / 92;
+    c.setTransform(k, 0, 0, k, (px * dpr) / 2, (px * dpr) / 2);
+    c.clearRect(-50, -50, 100, 100);
+    c.beginPath();
+    traceSized(c, s, s.cutW, s.cutH);
+    c.fillStyle = '#ffe3f0';
+    c.fill();
+    c.lineWidth = 1.2;
+    c.strokeStyle = '#c2306f';
+    c.stroke();
+    c.beginPath();
+    traceSized(c, s, s.faceW, s.faceH);
+    c.setLineDash([3, 2]);
+    c.strokeStyle = '#3a2230';
+    c.stroke();
+    sampleTxt.textContent = s.shape === 'circle' ? `${s.faceW} mm` : `${s.faceW}×${s.faceH} mm`;
   }
 
   /** Reglas en cm arriba y a la izquierda del papel. */
@@ -416,8 +481,8 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
     const it = hit(e);
     const now = performance.now();
     if (!it) {
-      if (state.selId !== null) {
-        state.selId = null;
+      if (state.selection.size) {
+        state.selection.clear();
         emit('list', 'view');
       }
       return;
@@ -429,15 +494,15 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
       return;
     }
     lastTap = { t: now, id: it.designId };
-    if (state.selId !== it.designId) {
-      state.selId = it.designId;
-      emit('list', 'design', 'view');
-    }
+    state.selection = new Set([it.designId]);
+    state.selId = it.designId;
+    emit('list', 'design', 'view');
   });
   canvas.addEventListener('dblclick', (e) => {
     const it = hit(e);
     if (!it) return;
     state.selId = it.designId;
+    state.selection = new Set([it.designId]);
     emit('list', 'design', 'view');
     hooks.openEditor();
   });
