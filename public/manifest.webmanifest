@@ -1,0 +1,14 @@
+{
+  "name": "Pines de Rebeca Marroquín",
+  "short_name": "Pines Rebeca",
+  "description": "Pines de Rebeca Marroquín",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fff5fa",
+  "theme_color": "#e85d9a",
+  "lang": "es",
+  "icons": [
+    { "src": "pin.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
