@@ -118,6 +118,16 @@ export interface TextLayer {
   shape: TextShape;
   /** cuánto se curva (arco u onda), 0..1 */
   bend: number;
+  /** colores del degradado (separados por coma); si está vacío se usan color y color2 */
+  gradColors: string;
+  /** ángulo del degradado: 180 = de arriba a abajo, 90 = de izquierda a derecha */
+  gradAngle: number;
+  /** color del brillo (resplandor suave); vacío = sin brillo */
+  glow: string;
+  /** profundidad de la sombra 3D, relativa al tamaño de letra */
+  depth: number;
+  /** escribir en MAYÚSCULAS */
+  upper: boolean;
   effect: TextEffect;
   effectColor: string;
   /** cuánto se mete hacia el centro, mm */
@@ -154,6 +164,8 @@ export interface Design {
 export interface FontDef {
   family: string;
   weight: number;
+  /** 'italic' para las cursivas */
+  style?: string;
 }
 
 /** Fuentes incrustadas en la app (funcionan sin internet). */
@@ -172,6 +184,28 @@ export const FONTS: readonly FontDef[] = [
   { family: 'Great Vibes', weight: 400 },
   { family: 'Bungee', weight: 400 },
   { family: 'Comfortaa', weight: 700 },
+  { family: 'Kaushan Script', weight: 400 },
+  { family: 'Yellowtail', weight: 400 },
+  { family: 'Rubik Bubbles', weight: 400 },
+  { family: 'Londrina Outline', weight: 400 },
+  { family: 'Rock Salt', weight: 400 },
+  { family: 'Fredericka the Great', weight: 400 },
+  { family: 'Cabin Sketch', weight: 700 },
+  { family: 'Alex Brush', weight: 400 },
+  { family: 'Andika', weight: 700 },
+  { family: 'Lilita One', weight: 400 },
+  { family: 'Bangers', weight: 400 },
+  { family: 'Monoton', weight: 400 },
+  { family: 'Cinzel Decorative', weight: 700 },
+  { family: 'Sedgwick Ave Display', weight: 400 },
+  { family: 'Titan One', weight: 400 },
+  { family: 'Bowlby One', weight: 400 },
+  { family: 'Sniglet', weight: 800 },
+  { family: 'Anton', weight: 400 },
+  { family: 'Cormorant Garamond', weight: 500, style: 'italic' },
+  { family: 'Archivo Black', weight: 400 },
+  { family: 'Cinzel', weight: 700 },
+  { family: 'Fredoka Bold', weight: 700 },
 ];
 
 export const EMOJIS = ['⭐', '💖', '🌸', '🦋', '🌈', '✨', '🍓', '🐱', '🎀', '🔥', '⚡', '🌙', '☀️', '🍀', '🎵', '👑', '🌻', '🐾', '💫', '🍒', '🐶', '🌷', '💎', '🦄'];
@@ -226,6 +260,11 @@ export function newDesign(sizeId: string, imageId: string | null = null): Design
       outline2Width: 0.12,
       shape: 'recto',
       bend: 0.5,
+      gradColors: '',
+      gradAngle: 180,
+      glow: '',
+      depth: 0.15,
+      upper: false,
       effect: 'ninguno',
       effectColor: '#7a1b4a',
       inset: 1.5,
@@ -273,5 +312,7 @@ export function bitmapSize(b: Bitmap): { w: number; h: number } {
 
 export function fontCss(family: string, sizePx: number): string {
   const f = FONTS.find((x) => x.family === family) ?? FONTS[0];
-  return `${f.weight} ${sizePx}px "${f.family}"`;
+  // "Fredoka Bold" es la misma familia Fredoka con peso 700
+  const fam = f.family === 'Fredoka Bold' ? 'Fredoka' : f.family;
+  return `${f.style ? f.style + ' ' : ''}${f.weight} ${sizePx}px "${fam}"`;
 }

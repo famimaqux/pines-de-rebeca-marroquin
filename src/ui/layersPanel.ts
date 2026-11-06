@@ -1,7 +1,5 @@
-import { EMOJIS, EPSON_ADJUST, FONTS, NEUTRAL_ADJUST, fontCss, newDesign, newSticker, type Design, type TextLayer } from '../model/design';
-import { LETTERING, applyLettering } from '../model/lettering';
+import { EMOJIS, EPSON_ADJUST, FONTS, NEUTRAL_ADJUST, newSticker, type Design } from '../model/design';
 import { addImageBlob } from '../image/store';
-import { layoutLine, paintGlyphs } from '../render/text';
 import { checkpoint, current, editTargets, emit } from '../state';
 import { fmtNum, h, uniqueId } from './dom';
 import { toast } from './toast';
@@ -10,8 +8,9 @@ import { bgGallery, ringGallery, wordArtGallery } from './galleries';
 import { copyAdjust, copyBackground, copyCutout, copyRing, copyStickers, copyTextStyle } from '../model/styleCopy';
 
 /** Botón "🎯 Aplicar … a otros pines": copia esa parte del pin actual con el cuadro de alcance. */
-function applyToOthers(what: string, copy: (src: Design, dst: Design, extra: boolean) => void, extra?: { label: string; checked: boolean }): Ctl {
+function applyToOthers(what: string, copy: (src: Design, dst: Design, extra: boolean) => void, extra?: { label: string; checked: boolean }): CtlA {
   return {
+    adv: true,
     kind: 'custom',
     build: () => {
       const el = h(
@@ -55,12 +54,14 @@ type Ctl =
   | { kind: 'text'; path: string; label: string; placeholder?: string; show?: Cond; wide?: boolean }
   | { kind: 'image'; path: string; label: string; show?: Cond; onSet?: (d: Design) => void; button?: string }
   | { kind: 'custom'; build: () => { el: HTMLElement; refresh: () => void }; show?: Cond };
+/** adv = va dentro de "☰ Más opciones" (para que la vista sea simple). */
+type CtlA = Ctl & { adv?: boolean };
 
 interface Section {
   id: string;
   title: string;
   open?: boolean;
-  controls: Ctl[];
+  controls: CtlA[];
 }
 
 const gradient: Cond = (d) => d.bg.type === 'lineal' || d.bg.type === 'radial';
@@ -86,68 +87,6 @@ export interface LayersPanelHooks {
   idPrefix?: string;
   /** Bloque extra en "Quitar fondo" (IA), lo agrega la etapa de IA. */
   aiBlock?: () => { el: HTMLElement; refresh: () => void };
-}
-
-/** Galería de "modelos de letra": cada botón muestra el estilo aplicado a una palabra de ejemplo. */
-function letteringGallery(): { el: HTMLElement; refresh: () => void } {
-  const el = h('div', { class: 'gallery lettering', role: 'group', 'aria-label': 'Modelos de letra' });
-  const sample = h('input', { type: 'text', value: '', placeholder: 'Escribe un nombre para ver los modelos', class: 'sample', 'aria-label': 'Texto de ejemplo para los modelos de letra', maxlength: 14 });
-  const grid = h('div', { class: 'gallery-grid' });
-  const buttons: { name: string; canvas: HTMLCanvasElement }[] = [];
-  for (const name of Object.keys(LETTERING)) {
-    const canvas = h('canvas', { width: 300, height: 110, 'aria-hidden': 'true' });
-    const b = h(
-      'button',
-      {
-        type: 'button',
-        class: 'style-btn',
-        title: `Aplicar el modelo de letra “${name}”`,
-        onclick: () => {
-          const d = current();
-          if (!d) return;
-          const word = sample.value.trim() || d.text.middle || d.text.bottom || d.text.top || 'Tu nombre';
-          void applyWithScope({
-            title: `Modelo de letra “${name}”`,
-            preferred: 'this',
-            extra: { label: `Poner también el mismo texto “${word}” en todos (si no, cada pin conserva su texto)`, checked: false },
-            apply: (z, sameText) => {
-              applyLettering(z, name);
-              if (sameText) z.text.middle = word;
-              else if (!hasText(z)) z.text.middle = word;
-            },
-          });
-        },
-      },
-      canvas,
-      h('span', {}, name),
-    );
-    buttons.push({ name, canvas });
-    grid.append(b);
-  }
-  let lastKey = '';
-  const paint = () => {
-    const d = current();
-    const word = sample.value.trim() || d?.text.middle || d?.text.bottom || d?.text.top || 'Rebeca';
-    // Solo se repinta si cambia la palabra o terminan de cargar las fuentes.
-    const key = `${word}|${document.fonts?.status}`;
-    if (key === lastKey) return;
-    lastKey = key;
-    for (const { name, canvas } of buttons) {
-      const ctx = canvas.getContext('2d')!;
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const t: TextLayer = { ...newDesign('x').text, ...LETTERING[name] };
-      const fs = 52;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = fontCss(t.font, fs);
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      paintGlyphs(ctx, layoutLine(ctx, word, 0, canvas.width - 24), t, fs);
-    }
-  };
-  sample.addEventListener('input', paint);
-  el.append(sample, grid);
-  return { el, refresh: paint };
 }
 
 export interface LayersPanel {
@@ -412,7 +351,6 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
           show: (d) => !!d.text.middle,
         },
         { kind: 'range', path: 'text.bend', label: 'Curvatura', min: 0.05, max: 1, step: 0.05, pct: true, show: (d) => !!d.text.middle && d.text.shape !== 'recto' },
-        { kind: 'custom', build: letteringGallery },
         { kind: 'select', path: 'text.font', label: 'Fuente', options: FONTS.map((f) => [f.family, f.family]), font: true },
         {
           kind: 'select',
@@ -429,7 +367,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
         },
         { kind: 'color', path: 'text.color', label: 'Color 1', show: (d) => d.text.fill !== 'arcoiris' && d.text.fill !== 'porLetra' && d.text.fill !== 'contorno' },
         { kind: 'color', path: 'text.color2', label: 'Color 2', show: twoColors },
-        { kind: 'custom', build: letterColors, show: (d) => d.text.fill === 'porLetra' },
+        { kind: 'custom', adv: true, build: letterColors, show: (d) => d.text.fill === 'porLetra' },
         { kind: 'check', path: 'text.outline', label: 'Contorno', show: (d) => d.text.fill !== 'contorno' },
         { kind: 'color', path: 'text.outlineColor', label: 'Color del contorno', show: (d) => d.text.outline || d.text.fill === 'contorno' },
         { kind: 'range', path: 'text.outlineWidth', label: 'Grosor del contorno', min: 0.03, max: 0.5, step: 0.01, show: (d) => d.text.outline || d.text.fill === 'contorno' },
@@ -455,6 +393,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
         { kind: 'range', path: 'text.oy', label: 'Mover letras ↕', min: -40, max: 40, step: 0.25, unit: 'mm', show: hasText, reset: 0 },
         {
           kind: 'custom',
+          adv: true,
           show: hasText,
           build: () => ({ el: h('p', { class: 'muted small span-all' }, '✋ También puedes arrastrar las letras con el dedo o el mouse: en el editor del pin elige “Al arrastrar mueves: Letras”.'), refresh: () => {} }),
         },
@@ -464,6 +403,18 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
       ],
     },
   ];
+
+  // Lo menos usado va dentro de "☰ Más opciones".
+  const ADV = new Set([
+    'bg.ox', 'bg.oy', 'bg.zoom', 'bg.rot', 'pattern.alpha', 'pattern.scale',
+    'image.clip', 'image.ox', 'image.oy', 'image.rot', 'cutout.tol', 'cutout.soft',
+    'adjust.bright', 'adjust.contrast', 'adjust.sat', 'adjust.sharp',
+    'ring.finish', 'ring.color', 'ring.width',
+    'text.shape', 'text.bend', 'text.font', 'text.fill', 'text.color', 'text.color2',
+    'text.outline', 'text.outlineColor', 'text.outlineWidth', 'text.outline2', 'text.outline2Color', 'text.outline2Width',
+    'text.effect', 'text.effectColor', 'text.middleSize', 'text.middleY', 'text.size', 'text.inset', 'text.ox', 'text.oy',
+  ]);
+  const isAdv = (c: CtlA) => !!c.adv || ('path' in c && ADV.has(c.path));
 
   const el = h('div', { class: 'layers' });
   const refreshers: (() => void)[] = [];
@@ -670,7 +621,14 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
 
   const parts: Record<string, HTMLElement> = {};
   for (const sec of SECTIONS) {
-    const body = h('div', { class: 'fields', id: `${hooks.idPrefix ?? ''}sec-${sec.id}` }, ...sec.controls.map(field));
+    const basic = sec.controls.filter((c) => !isAdv(c));
+    const adv = sec.controls.filter(isAdv);
+    const body = h(
+      'div',
+      { class: 'fields', id: `${hooks.idPrefix ?? ''}sec-${sec.id}` },
+      ...basic.map(field),
+      ...(adv.length ? [h('details', { class: 'more span-all' }, h('summary', {}, '☰ Más opciones'), h('div', { class: 'fields' }, ...adv.map(field)))] : []),
+    );
     parts[sec.id] = body;
     el.append(h('details', { open: !!sec.open }, h('summary', {}, sec.title), body));
   }

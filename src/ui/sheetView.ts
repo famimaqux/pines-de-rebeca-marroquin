@@ -247,7 +247,7 @@ export function createSheetView(hooks: SheetViewHooks): SheetViewParts {
     h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Alejar', onclick: () => zoomBy(1 / 1.2) }, '−'),
     zoomOut,
     h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Acercar', onclick: () => zoomBy(1.2) }, '+'),
-    h('button', { type: 'button', class: 'btn ghost small', onclick: () => ((state.zoom = 0), emit('view')) }, 'Ajustar a pantalla'),
+    h('button', { type: 'button', class: 'btn ghost small', onclick: () => ((state.zoom = 0), emit('view')) }, '⤢ Ajustar'),
     h('label', { class: 'check', for: 'ruler-chk' }, rulerChk, ' Regla'),
   );
   const finishedChk = h('input', { type: 'checkbox', id: 'finished-all' });
@@ -301,8 +301,8 @@ export function createSheetView(hooks: SheetViewHooks): SheetViewParts {
     { class: 'sheet-nav' },
     h('div', { class: 'row' }, prev, pageInfo, next),
     zoomBox,
-    h('label', { class: 'check finished-chk', for: 'finished-all' }, finishedChk, ' 👁 Ver pines terminados'),
-    h('label', { class: 'mini inline' }, h('span', {}, 'Repetir esta hoja ×'), rep),
+    h('label', { class: 'check finished-chk', for: 'finished-all' }, finishedChk, ' 👁 Terminados'),
+    h('label', { class: 'mini inline' }, h('span', { title: 'Repetir esta hoja (copias)' }, '🔁 ×'), rep),
     pageTag,
   );
 

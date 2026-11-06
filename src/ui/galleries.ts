@@ -1,5 +1,6 @@
 import { fontCss, newDesign, type Design, type TextLayer } from '../model/design';
-import { BG_PRESETS, RING_PRESETS, WORDART, applyBgPreset, applyRingPreset, applyWordArt } from '../model/galleries';
+import { BG_PRESETS, RING_PRESETS, applyBgPreset, applyRingPreset } from '../model/galleries';
+import { CATEGORY_LABELS, LETTERING_CATALOG, applyLetteringEntry, type LetteringCategory } from '../model/lettering';
 import { DEFAULT_SIZES, type PinSize } from '../model/sizes';
 import { getImage } from '../image/store';
 import { drawPin } from '../render/drawPin';
@@ -119,59 +120,80 @@ export function ringGallery(): { el: HTMLElement; refresh: () => void } {
   return { el: h('div', { class: 'span-all gallery-box' }, h('span', { class: 'label' }, '💍 Modelos de círculo / borde'), grid), refresh: () => {} };
 }
 
-/** WordArt de un clic con vista previa del nombre escrito. */
+/** Estilos de letra (Quiz, Culto, WordArt, Kawaii) con vista previa del nombre escrito. */
 export function wordArtGallery(): { el: HTMLElement; refresh: () => void } {
-  const grid = h('div', { class: 'gallery-grid' });
-  const items: { name: string; canvas: HTMLCanvasElement }[] = [];
-  for (const name of Object.keys(WORDART)) {
-    const canvas = h('canvas', { width: 300, height: 130, 'aria-hidden': 'true' });
-    items.push({ name, canvas });
-    grid.append(
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'style-btn',
-          title: `WordArt “${name}”`,
-          onclick: () => {
-            const d = current();
-            if (!d) return;
-            const word = d.text.middle || d.text.top || d.text.bottom || 'Tu nombre';
-            void applyWithScope({
-              title: `WordArt “${name}”`,
-              preferred: 'selected',
-              extra: { label: `Poner también el mismo texto “${word}” en todos`, checked: false },
-              apply: (z, same) => {
-                applyWordArt(z, name);
-                if (same || !(z.text.middle || z.text.top || z.text.bottom)) z.text.middle = word;
-              },
-            });
-          },
+  const cats = Object.keys(CATEGORY_LABELS) as LetteringCategory[];
+  let cat: LetteringCategory = 'quiz';
+  const chips = h('div', { class: 'cat-chips', role: 'tablist', 'aria-label': 'Categorías de estilos de letra' });
+  const grid = h('div', { class: 'gallery-grid letter-grid' });
+  const chipBtns = cats.map((c) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        role: 'tab',
+        class: 'cat-chip',
+        'aria-selected': String(c === cat),
+        onclick: () => {
+          cat = c;
+          chipBtns.forEach((b, i) => b.setAttribute('aria-selected', String(cats[i] === cat)));
+          last = '';
+          render();
         },
-        canvas,
-        h('span', {}, name),
-      ),
-    );
-  }
+      },
+      `${CATEGORY_LABELS[c]} · ${LETTERING_CATALOG.filter((e) => e.cat === c).length}`,
+    ),
+  );
+  chips.append(...chipBtns);
   let last = '';
-  const refresh = () => {
+  const render = () => {
     const d = current();
     const word = (d?.text.middle || d?.text.top || 'Rebeca').slice(0, 14);
-    const key = `${word}|${document.fonts?.status}`;
+    const key = `${cat}|${word}|${document.fonts?.status}`;
     if (key === last) return;
     last = key;
-    for (const { name, canvas } of items) {
-      const ctx = canvas.getContext('2d')!;
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const t: TextLayer = { ...newDesign('x').text, ...WORDART[name] };
-      const fs = 46;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = fontCss(t.font, fs);
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      paintGlyphs(ctx, layoutShaped(ctx, word, 0, canvas.width - 40, fs, t.shape, t.bend), t, fs);
-    }
+    grid.replaceChildren(
+      ...LETTERING_CATALOG.filter((e) => e.cat === cat).map((e) => {
+        const canvas = h('canvas', { width: 300, height: 120, 'aria-hidden': 'true' });
+        const ctx = canvas.getContext('2d')!;
+        if (e.sample) {
+          ctx.fillStyle = e.sample;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        const t: TextLayer = { ...newDesign('x').text, fill: 'solido', outline: false, effect: 'ninguno', ...e.style };
+        const fs = 50;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = fontCss(t.font, fs);
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        const txt = t.upper ? word.toUpperCase() : word;
+        paintGlyphs(ctx, layoutShaped(ctx, txt, 0, canvas.width - 40, fs, t.shape ?? 'recto', t.bend ?? 0.5), t, fs);
+        return h(
+          'button',
+          {
+            type: 'button',
+            class: 'style-btn',
+            title: `Estilo de letra “${e.name}”`,
+            onclick: () => {
+              const dd = current();
+              if (!dd) return;
+              const w = dd.text.middle || dd.text.top || dd.text.bottom || 'Tu nombre';
+              void applyWithScope({
+                title: `Estilo de letra “${e.name}”`,
+                preferred: 'selected',
+                extra: { label: `Poner también el mismo texto “${w}” en todos`, checked: false },
+                apply: (z, same) => {
+                  applyLetteringEntry(z, e);
+                  if (same || !(z.text.middle || z.text.top || z.text.bottom)) z.text.middle = w;
+                },
+              });
+            },
+          },
+          canvas,
+          h('span', {}, e.name),
+        );
+      }),
+    );
   };
-  return { el: h('div', { class: 'span-all gallery-box' }, h('span', { class: 'label' }, '🅰️ WordArt de un clic'), grid), refresh };
+  return { el: h('div', { class: 'span-all gallery-box' }, h('span', { class: 'label' }, '🅰️ Estilos de letra (toca uno)'), chips, grid), refresh: render };
 }

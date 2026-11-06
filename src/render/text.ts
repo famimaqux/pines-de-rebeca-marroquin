@@ -53,6 +53,7 @@ export function layoutArc(ctx: Ctx, text: string, r: number, top: boolean, fs: n
 /** Coloca las letras en línea recta centrada en (0, y), comprimiendo si pasa de maxW. */
 export function layoutLine(ctx: Ctx, text: string, y: number, maxW: number): Glyph[] {
   const chars = [...text];
+  if (!chars.length) return [];
   const idx = indexLetters(chars);
   const widths = chars.map((c) => ctx.measureText(c).width);
   const total = widths.reduce((a, b) => a + b, 0);
@@ -63,6 +64,14 @@ export function layoutLine(ctx: Ctx, text: string, y: number, maxW: number): Gly
     x += widths[i] * k;
     return g;
   });
+}
+
+function gradList(t: TextLayer): string[] {
+  const list = (t.gradColors ?? '')
+    .split(/[,\s]+/)
+    .map((x) => x.trim())
+    .filter((x) => /^#[0-9a-f]{3,8}$/i.test(x));
+  return list.length ? list : [t.color, t.color2];
 }
 
 function letterPalette(t: TextLayer): string[] {
@@ -105,9 +114,16 @@ export function paintGlyphs(ctx: Ctx, glyphs: Glyph[], t: TextLayer, fs: number)
       case 'arcoiris':
         return RAINBOW_LETTERS[g.n % RAINBOW_LETTERS.length];
       case 'degradado': {
-        const gr = ctx.createLinearGradient(0, -fs * 0.45, 0, fs * 0.45);
-        gr.addColorStop(0, t.color);
-        gr.addColorStop(1, t.color2);
+        const cols = gradList(t);
+        const ang = (((t.gradAngle ?? 180) % 360) + 360) % 360;
+        let gr: CanvasGradient;
+        if (ang === 90 || ang === 270) {
+          // de izquierda a derecha a lo ancho de TODA la palabra (como en CSS)
+          const x0 = lineMinX - g.x;
+          const x1 = lineMaxX - g.x;
+          gr = ang === 90 ? ctx.createLinearGradient(x0, 0, x1, 0) : ctx.createLinearGradient(x1, 0, x0, 0);
+        } else gr = ang === 0 ? ctx.createLinearGradient(0, fs * 0.45, 0, -fs * 0.45) : ctx.createLinearGradient(0, -fs * 0.45, 0, fs * 0.45);
+        cols.forEach((c, i) => gr.addColorStop(cols.length === 1 ? 0 : i / (cols.length - 1), c));
         return gr;
       }
       default:
@@ -115,18 +131,37 @@ export function paintGlyphs(ctx: Ctx, glyphs: Glyph[], t: TextLayer, fs: number)
     }
   };
 
+  const lineMinX = Math.min(...glyphs.map((g) => g.x)) - fs * 0.35;
+  const lineMaxX = Math.max(...glyphs.map((g) => g.x)) + fs * 0.35;
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.miterLimit = 2;
 
+  // 0) Brillo (resplandor suave alrededor de las letras)
+  if (t.glow) {
+    ctx.save();
+    ctx.shadowColor = t.glow;
+    ctx.shadowBlur = fs * 0.22 * dev;
+    ctx.fillStyle = t.glow;
+    ctx.strokeStyle = t.glow;
+    ctx.lineWidth = outlineW || fs * 0.04;
+    each((g) => {
+      ctx.strokeText(g.c, 0, 0);
+      ctx.fillText(g.c, 0, 0);
+    });
+    ctx.restore();
+  }
+
   // 1) Efecto de fondo
   if (t.effect === '3d') {
-    const steps = 6;
+    // sombra sólida en diagonal: tantos pasos como haga falta para la profundidad pedida
+    const depth = Math.max(0.01, t.depth ?? 0.15);
+    const steps = Math.max(2, Math.min(10, Math.round(depth / 0.02)));
     ctx.fillStyle = t.effectColor;
     ctx.strokeStyle = t.effectColor;
     ctx.lineWidth = outlineW;
     for (let s = steps; s >= 1; s--) {
-      const off = s * fs * 0.025;
+      const off = (s / steps) * depth * fs;
       each((g) => {
         if (outlineW) ctx.strokeText(g.c, off, off);
         ctx.fillText(g.c, off, off);
@@ -222,8 +257,9 @@ export function layoutShaped(ctx: Ctx, text: string, y: number, maxW: number, fs
 
 /** Capa 6: textos de arriba, abajo y centro. */
 export function drawTexts(ctx: Ctx, d: Design, size: PinSize): void {
-  const t = d.text;
-  if (!t.top && !t.bottom && !t.middle) return;
+  const t0 = d.text;
+  if (!t0.top && !t0.bottom && !t0.middle) return;
+  const t = t0.upper ? { ...t0, top: t0.top.toUpperCase(), bottom: t0.bottom.toUpperCase(), middle: t0.middle.toUpperCase() } : t0;
   ctx.save();
   ctx.translate(t.ox ?? 0, t.oy ?? 0);
   ctx.textAlign = 'center';

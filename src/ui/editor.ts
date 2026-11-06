@@ -182,8 +182,10 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
         emit('design');
       },
     },
-    '⊙ Centrar',
+    '⊙',
   );
+  centerBtn.title = 'Centrar';
+  centerBtn.setAttribute('aria-label', 'Centrar');
 
   // ---- Estilos rápidos y acciones ----
   const presetBtns = Object.keys(PRESETS).map((name) =>
@@ -292,19 +294,27 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
     tabPanels[i].hidden = state.dragTarget !== t.id;
   });
 
+  // Vista simple: molde y herramientas de la vista previa en una fila; lo demás en "☰ Más opciones".
+  zoomRow.append(h('label', { class: 'check small', for: 'finished', title: 'Ver cómo queda prensado' }, finishedChk, ' 👁'), centerBtn);
+  const dragRow = h('div', { class: 'row wrap drag-row' }, h('span', { class: 'label', id: 'drag-lbl' }, 'Al arrastrar mueves:'), h('div', { class: 'segmented', role: 'group', 'aria-labelledby': 'drag-lbl' }, ...targetBtns));
   const layout = h(
     'section',
     { class: 'card preview', 'aria-labelledby': 'editor-title' },
     h('div', { class: 'row between' }, title, h('div', { class: 'row' }, undoBtn, redoBtn)),
-    h('div', { class: 'row wrap' }, h('label', { for: 'ed-size' }, 'Molde'), sizeSelect, h('label', { class: 'check', for: 'finished' }, finishedChk, ' Ver pin terminado')),
-    h('div', { class: 'row wrap' }, h('span', { class: 'label', id: 'drag-lbl' }, 'Al arrastrar mueves:'), h('div', { class: 'segmented', role: 'group', 'aria-labelledby': 'drag-lbl' }, ...targetBtns), centerBtn),
+    h('div', { class: 'row wrap ed-molde' }, h('label', { for: 'ed-size' }, 'Molde'), sizeSelect),
+    ...(tabsIn.length ? [] : [dragRow]),
     zoomRow,
     canvasWrap,
-    note,
     warn,
     ...(tabsIn.length ? [tabsBar, ...tabPanels] : [brushRow, wandBox]),
-    h('div', { class: 'quick' }, h('span', { class: 'label' }, 'Estilos rápidos'), h('div', { class: 'chips' }, ...presetBtns)),
-    h('div', { class: 'row wrap' }, styleAll, allSizes, batchBtn),
+    h(
+      'details',
+      { class: 'more' },
+      h('summary', {}, '☰ Más opciones del pin'),
+      note,
+      h('div', { class: 'quick' }, h('span', { class: 'label' }, 'Estilos rápidos'), h('div', { class: 'chips' }, ...presetBtns)),
+      h('div', { class: 'row wrap' }, styleAll, allSizes, batchBtn),
+    ),
   );
 
   sizeSelect.addEventListener('change', async () => {
