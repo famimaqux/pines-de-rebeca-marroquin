@@ -66,6 +66,7 @@ export function movePins(keys: string[], dx: number, dy: number, toSheet?: numbe
   if (!plan.length) return 0;
   checkpoint();
   for (const [k, f] of plan) state.fixed.set(k, f);
+  state.messy = true;
   emit('page', 'list');
   return bumped;
 }
@@ -92,6 +93,7 @@ function trySwap(key: string, dx: number, dy: number): boolean {
   state.fixed.set(key, { sheet: loc.sheet, x: meAt[0], y: meAt[1], manual: manualOf(key) });
   state.fixed.set(under.key, { sheet: loc.sheet, x: otherAt[0], y: otherAt[1], manual: manualOf(under.key) });
   lastMoveSwapped = true;
+  state.messy = true;
   emit('page', 'list');
   return true;
 }
@@ -207,11 +209,21 @@ export function setMode(mode: 'auto' | 'grid' | 'free'): void {
   emit('page', 'list');
 }
 
-/** "Reacomodar todo": suelta los fijados y vuelve a acomodar automáticamente. */
-export function resetArrangement(): void {
+/**
+ * "Ordenar": vuelve a acomodar en orden automático y suelta los fijados 📌.
+ * `scope` = 'sheet' (solo la hoja que se ve) o 'all' (todas). Un solo Ctrl+Z lo deshace.
+ */
+export function resetArrangement(scope: 'sheet' | 'all' = 'all'): void {
   checkpoint();
-  state.fixed.clear();
+  if (scope === 'all') state.fixed.clear();
+  else for (const [k, f] of [...state.fixed]) if (f.sheet === state.sheet) state.fixed.delete(k);
+  if (scope === 'all' || ![...state.fixed.values()].some((f) => f.manual)) state.messy = false;
   emit('page', 'list');
+}
+
+/** ¿La hoja está "desordenada"? (pines movidos o fijados a mano) */
+export function isMessy(): boolean {
+  return state.messy || [...state.fixed.values()].some((f) => f.manual);
 }
 
 export const isPinned = (key: string) => !!state.fixed.get(key)?.manual;

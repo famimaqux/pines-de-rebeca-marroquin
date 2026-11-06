@@ -27,6 +27,8 @@ export interface ApplyRequest {
   preferred?: Scope;
   /** Aplicar directo a la selección si la hay (sin preguntar). */
   selectionFirst?: boolean;
+  /** Preguntar siempre (p. ej. "Aplicar a otros pines…"). */
+  ask?: boolean;
 }
 
 const PREF_KEY = 'pines-rebeca.scope';
@@ -94,6 +96,11 @@ function applyDirect(req: ApplyRequest, scope: Scope): number {
 /** Abre el cuadro (o aplica directo si corresponde). Resuelve con la cantidad de diseños cambiados (0 = cancelado). */
 export function applyWithScope(req: ApplyRequest): Promise<number> {
   if (!state.designs.length) return Promise.resolve(0);
+  // "Aplicar a" (abajo del panel) decide a qué pines va el cambio; solo "Personalizado" pregunta.
+  if (state.applyTo !== 'custom' && !req.ask) {
+    const scope: Scope = state.applyTo === 'selected' ? (state.selection.size ? 'selected' : 'this') : state.applyTo;
+    return Promise.resolve(applyDirect(req, scope));
+  }
   if (req.selectionFirst && state.selection.size > 0) return Promise.resolve(applyDirect(req, 'selected'));
   const ctx0 = context(new Set());
   const avail = availableScopes(ctx0);
@@ -108,7 +115,8 @@ export function applyWithScope(req: ApplyRequest): Promise<number> {
     const ctxNow = (custom: ReadonlySet<number>): ScopeContext => ({ ...frozen, customIds: custom });
     const selBefore = state.selId;
     let scope: Scope = (req.preferred && avail.includes(req.preferred) ? req.preferred : null) ?? (lastScope && avail.includes(lastScope) ? lastScope : avail.includes('sheet') ? 'sheet' : avail[0]);
-    const customIds = new Set<number>(state.selection.size ? state.selection : current() ? [current()!.id] : []);
+    const customIds = new Set<number>(state.customIds.size ? state.customIds : state.selection.size ? state.selection : current() ? [current()!.id] : []);
+    if (state.applyTo === 'custom') scope = 'custom';
 
     const dlg = h('dialog', { class: 'dialog scope-dialog', 'aria-labelledby': 'scope-title' });
     const radios = new Map<Scope, HTMLInputElement>();
@@ -199,6 +207,7 @@ export function applyWithScope(req: ApplyRequest): Promise<number> {
       if (applied) {
         const ids = targetIds(scope, ctxNow(customIds));
         checkpointFrom(snapshot, selBefore, fixedSnap);
+        if (scope === 'custom') state.customIds = new Set(customIds);
         lastScope = scope;
         if (dontAskChk.checked && scope !== 'custom') dontAsk = true;
         savePrefs();

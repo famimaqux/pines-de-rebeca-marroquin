@@ -35,7 +35,7 @@ function applyToOthers(what: string, copy: (src: Design, dst: Design, extra: boo
               });
             },
           },
-          `🎯 Aplicar ${what} a otros pines…`,
+          `Aplicar ${what} a otros pines…`,
         ),
       );
       return { el, refresh: () => {} };
@@ -107,8 +107,8 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
         {
           kind: 'image',
           path: 'bg.imageId',
-          label: '🖼 Imagen de fondo propia (foto, textura, papel decorado)',
-          button: '📁 Cargar imagen de fondo…',
+          label: 'Imagen de fondo propia (foto, textura, papel decorado)',
+          button: 'Cargar imagen de fondo…',
           onSet: (d) => Object.assign(d.bg, { ox: 0, oy: 0, zoom: 1, rot: 0 }),
         },
         {
@@ -212,7 +212,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
             const el = h(
               'p',
               { class: 'muted small span-all' },
-              '🖌 Para corregir a mano usa el pincel “Borrar / Restaurar” que está bajo la vista previa.',
+              'Para corregir a mano usa la varita o el pincel del editor de pin.',
             );
             return { el, refresh: () => {} };
           },
@@ -246,7 +246,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
                   }).then((n) => n && toast('Recuerda desactivar PhotoEnhance al imprimir.', 4000));
                 },
               },
-              '✨ Optimizar para Epson L8050',
+              'Optimizar para Epson L8050',
             );
             const reset = h(
               'button',
@@ -274,13 +274,13 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
                 onclick: () => {
                   if (!current()) return;
                   void applyWithScope({
-                    title: '🌈 Mejorar colores: más vivos y claritos',
+                    title: 'Mejorar colores: más vivos y claritos',
                     preferred: 'selected',
                     apply: (z) => (z.adjust = { ...z.adjust, auto: 1 }),
                   }).then((n) => n && toast('Colores mejorados. Ajusta la intensidad con “Mejora automática”.', 3500));
                 },
               },
-              '🌈 Mejorar colores',
+              'Mejorar colores',
             );
             return {
               el: h('div', { class: 'span-all' }, b, h('p', { class: 'muted small' }, 'Para fotos opacas u oscuras: estira los colores, aclara los tonos medios y aviva los colores apagados.')),
@@ -395,7 +395,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
           kind: 'custom',
           adv: true,
           show: hasText,
-          build: () => ({ el: h('p', { class: 'muted small span-all' }, '✋ También puedes arrastrar las letras con el dedo o el mouse: en el editor del pin elige “Al arrastrar mueves: Letras”.'), refresh: () => {} }),
+          build: () => ({ el: h('p', { class: 'muted small span-all' }, 'También puedes arrastrar las letras con el dedo o el mouse: en el editor del pin elige “Al arrastrar mueves: Letras”.'), refresh: () => {} }),
         },
         { kind: 'range', path: 'text.size', label: 'Tamaño arriba/abajo', min: 2, max: 14, step: 0.25, unit: 'mm', show: (d) => !!(d.text.top || d.text.bottom) },
         { kind: 'range', path: 'text.inset', label: 'Hacia el centro', min: -3, max: 12, step: 0.25, unit: 'mm', show: (d) => !!(d.text.top || d.text.bottom) },
@@ -526,7 +526,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
           const dd = d();
           const has = !!(dd && getPath(dd, ctl.path));
           clear.hidden = !has;
-          pick.textContent = has ? (ctl.button ? '📁 Cambiar imagen de fondo…' : 'Cambiar imagen…') : (ctl.button ?? 'Elegir imagen…');
+          pick.textContent = has ? (ctl.button ? 'Cambiar imagen de fondo…' : 'Cambiar imagen…') : (ctl.button ?? 'Elegir imagen…');
         });
         break;
       }
@@ -627,7 +627,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
       'div',
       { class: 'fields', id: `${hooks.idPrefix ?? ''}sec-${sec.id}` },
       ...basic.map(field),
-      ...(adv.length ? [h('details', { class: 'more span-all' }, h('summary', {}, '☰ Más opciones'), h('div', { class: 'fields' }, ...adv.map(field)))] : []),
+      ...(adv.length ? [h('details', { class: 'more span-all' }, h('summary', {}, 'Más opciones'), h('div', { class: 'fields' }, ...adv.map(field)))] : []),
     );
     parts[sec.id] = body;
     el.append(h('details', { open: !!sec.open }, h('summary', {}, sec.title), body));

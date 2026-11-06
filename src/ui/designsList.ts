@@ -50,7 +50,7 @@ export function createDesignsStrip(hooks: StripHooks): HTMLElement {
         hooks.openEditor();
       },
     },
-    '＋ Pin sin imagen',
+    '+ Pin sin imagen',
   );
   const clearBtn = h('button', { type: 'button', class: 'btn ghost small danger' }, 'Vaciar todo');
   clearBtn.addEventListener('click', () => {
@@ -103,7 +103,7 @@ export function createDesignsStrip(hooks: StripHooks): HTMLElement {
             ondblclick: () => hooks.openEditor(),
           },
           c,
-          h('span', { class: 'meta' }, h('strong', {}, label), h('span', { class: 'muted small' }, s.shape === 'circle' ? `${s.faceW} mm` : s.name)),
+          h('span', { class: 'meta' }, h('strong', {}, `Diseño ${i + 1}`), h('span', { class: 'qty-tag' }, ` · ×${d.qty}`), h('span', { class: 'muted small size-tag' }, s.shape === 'circle' ? `${s.faceW} mm` : s.name)),
         );
         const edit = h(
           'button',

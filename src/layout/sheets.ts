@@ -9,13 +9,17 @@ export function probeFor(s: PinSize): Omit<PackItem, 'order' | 'designId' | 'key
   return { sizeId: s.id, w: s.cutW, h: s.cutH, r: packRadius(s) };
 }
 
-export function buildItems(designs: Design[], sizes: PinSize[]): PackItem[] {
+/**
+ * Lista de pines a acomodar. Con `interleave` los diseños del mismo tamaño se
+ * intercalan (A, B, C, A, B, C…) en vez de agruparse (A, A, B, B…).
+ */
+export function buildItems(designs: Design[], sizes: PinSize[], interleave = false): PackItem[] {
   const items: PackItem[] = [];
-  designs.forEach((d, order) => {
+  designs.forEach((d, idx) => {
     const s = sizes.find((x) => x.id === d.sizeId);
     if (!s) return;
     const n = Math.max(0, Math.min(MAX_QTY, Math.floor(d.qty)));
-    for (let k = 0; k < n; k++) items.push({ ...probeFor(s), designId: d.id, order, key: pinKey(d.id, k) });
+    for (let k = 0; k < n; k++) items.push({ ...probeFor(s), designId: d.id, order: interleave ? k * 10000 + idx : idx, key: pinKey(d.id, k) });
   });
   return items;
 }
@@ -39,8 +43,9 @@ export function computeLayout(
   settings: PageSettings,
   fixed: ReadonlyMap<string, Fixed> = new Map(),
   mode: ArrangeMode = settings.algo === 'grid' ? 'grid' : settings.algo === 'free' ? 'free' : 'auto',
+  interleave = false,
 ): Layout {
-  const items = buildItems(designs, sizes);
+  const items = buildItems(designs, sizes, interleave);
   const res = arrange(items, fixed, settings, mode);
   const free: Record<string, number> = {};
   const last = res.pages[res.pages.length - 1];

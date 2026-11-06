@@ -60,11 +60,10 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
   );
 
   // ---- Pincel ----
+  // Quitar fondo: Varita · Pincel (borrar / restaurar) · Automático (fondo liso)
   const brushes: [BrushMode, string][] = [
-    ['off', 'Apagado'],
-    ['erase', '🧽 Borrar'],
-    ['restore', '🖌 Restaurar'],
-    ['wand', '🪄 Varita'],
+    ['wand', 'Varita'],
+    ['erase', 'Pincel'],
   ];
   const brushBtns = brushes.map(([m, label]) =>
     h(
@@ -75,8 +74,9 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
         'aria-pressed': 'false',
         onclick: () => {
           const d = current();
-          if (m !== 'off' && !d?.image.imageId) return toast('Primero carga una foto');
-          state.brush.mode = m;
+          if (!d?.image.imageId) return toast('Primero carga una foto');
+          const active = m === 'erase' ? state.brush.mode === 'erase' || state.brush.mode === 'restore' : state.brush.mode === m;
+          state.brush.mode = active ? 'off' : m;
           emit('view');
         },
       },
@@ -90,8 +90,28 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
     brushOut.textContent = `${fmtNum(state.brush.size)} mm`;
   });
   brushOut.textContent = `${fmtNum(state.brush.size)} mm`;
-  const brushSizeBox = h('label', { class: 'mini inline' }, h('span', {}, 'Tamaño'), brushSize, brushOut);
-  const brushRow = h('div', { class: 'row wrap brush-row' }, h('span', { class: 'label' }, 'Quitar fondo a mano:'), h('div', { class: 'segmented' }, ...brushBtns), brushSizeBox);
+  const autoBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'seg',
+      'aria-pressed': 'false',
+      title: 'Quita solo el fondo liso (blanco o de un color)',
+      onclick: () => {
+        const d = current();
+        if (!d?.image.imageId) return toast('Primero carga una foto');
+        checkpoint();
+        d.cutout.quick = !d.cutout.quick;
+        state.brush.mode = 'off';
+        emit('design', 'list', 'view');
+      },
+    },
+    'Automático',
+  );
+  const eraseBtn = h('button', { type: 'button', class: 'seg', 'aria-pressed': 'false', onclick: () => ((state.brush.mode = 'erase'), emit('view')) }, 'Borrar');
+  const restoreBtn = h('button', { type: 'button', class: 'seg', 'aria-pressed': 'false', onclick: () => ((state.brush.mode = 'restore'), emit('view')) }, 'Restaurar');
+  const brushSizeBox = h('div', { class: 'row wrap pincel-row' }, h('div', { class: 'segmented' }, eraseBtn, restoreBtn), h('label', { class: 'mini inline' }, h('span', {}, 'Tamaño'), brushSize, brushOut));
+  const brushRow = h('div', { class: 'brush-row' }, h('span', { class: 'label' }, 'Quitar fondo'), h('div', { class: 'segmented three' }, ...brushBtns, autoBtn), brushSizeBox);
 
   // ---- Varita mágica ----
   const tol = h('input', { type: 'range', min: 1, max: 160, step: 1, value: String(wand.opts.tol), 'aria-label': 'Tolerancia de la varita' });
@@ -146,7 +166,7 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
   const wandBox = h(
     'div',
     { class: 'wand-box', hidden: true },
-    h('p', { class: 'muted small' }, '🪄 Haz clic sobre la imagen para seleccionar la zona de color parecido. Mayús + clic suma otra zona, Alt + clic resta.'),
+    h('p', { class: 'muted small' }, 'Haz clic sobre la imagen para seleccionar la zona de color parecido. Mayús + clic suma otra zona, Alt + clic resta.'),
     h('div', { class: 'segmented', role: 'group', 'aria-label': 'Modo de la varita' }, ...opBtns),
     h('label', { class: 'mini' }, h('span', {}, 'Tolerancia ', tolOut), tol),
     h('label', { class: 'check small' }, contiguous, ' Solo zona continua (si no: todo ese color en la imagen)'),
@@ -154,14 +174,14 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
     h(
       'div',
       { class: 'row wrap' },
-      wandAction('🧽 Borrar selección', 'La zona elegida se vuelve transparente', () => applySel('erase')),
-      wandAction('🖌 Restaurar selección', 'La zona elegida vuelve a verse', () => applySel('restore')),
-      wandAction('🔄 Invertir', 'Útil para quedarse solo con la figura', () => {
+      wandAction('Borrar selección', 'La zona elegida se vuelve transparente', () => applySel('erase')),
+      wandAction('Restaurar selección', 'La zona elegida vuelve a verse', () => applySel('restore')),
+      wandAction('Invertir', 'Útil para quedarse solo con la figura', () => {
         if (!wand.seeds.length) return toast('Primero selecciona una zona');
         wand.opts.invert = !wand.opts.invert;
         live();
       }),
-      wandAction('✕ Quitar selección', 'Deja de seleccionar', () => clearWand()),
+      wandAction('Quitar selección', 'Deja de seleccionar', () => clearWand()),
     ),
   );
 
@@ -220,7 +240,7 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
         });
       },
     },
-    '📋 Copiar estilo a…',
+    'Copiar estilo a…',
   );
   const allSizes = h(
     'button',
@@ -246,9 +266,9 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
         toast(`Se crearon ${targetsS.length} versiones en otros tamaños (1 de cada uno)`);
       },
     },
-    '📐 Este diseño en todos los tamaños',
+    'Este diseño en todos los tamaños',
   );
-  const batchBtn = h('button', { type: 'button', class: 'btn ghost small', onclick: () => openBatch() }, '🏷 Nombres en lote');
+  const batchBtn = h('button', { type: 'button', class: 'btn ghost small', onclick: () => openBatch() }, 'Nombres en lote');
 
   // ---- Zoom de la vista previa ----
   let pz = 1;
@@ -261,9 +281,9 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
   const zoomRow = h(
     'div',
     { class: 'row preview-zoom', role: 'group', 'aria-label': 'Zoom de la vista previa' },
-    h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Alejar la vista previa', onclick: () => setPz(pz / 1.5) }, '🔍−'),
+    h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Alejar la vista previa', onclick: () => setPz(pz / 1.5) }, '−'),
     pzOut,
-    h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Acercar la vista previa', onclick: () => setPz(pz * 1.5) }, '🔍+'),
+    h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Acercar la vista previa', onclick: () => setPz(pz * 1.5) }, '+'),
     h('button', { type: 'button', class: 'btn ghost small', onclick: () => setPz(1) }, 'Ver todo'),
   );
   const canvasWrap = h('div', { class: 'canvas-wrap' }, canvas, empty);
@@ -295,22 +315,47 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
   });
 
   // Vista simple: molde y herramientas de la vista previa en una fila; lo demás en "☰ Más opciones".
-  zoomRow.append(h('label', { class: 'check small', for: 'finished', title: 'Ver cómo queda prensado' }, finishedChk, ' 👁'), centerBtn);
+  zoomRow.append(h('label', { class: 'check small', for: 'finished', title: 'Ver cómo queda prensado' }, finishedChk, ' Cara visible'), centerBtn);
   const dragRow = h('div', { class: 'row wrap drag-row' }, h('span', { class: 'label', id: 'drag-lbl' }, 'Al arrastrar mueves:'), h('div', { class: 'segmented', role: 'group', 'aria-labelledby': 'drag-lbl' }, ...targetBtns));
   const layout = h(
     'section',
     { class: 'card preview', 'aria-labelledby': 'editor-title' },
     h('div', { class: 'row between' }, title, h('div', { class: 'row' }, undoBtn, redoBtn)),
     h('div', { class: 'row wrap ed-molde' }, h('label', { for: 'ed-size' }, 'Molde'), sizeSelect),
-    ...(tabsIn.length ? [] : [dragRow]),
+    ...(tabsIn.length ? [tabsBar] : []),
     zoomRow,
     canvasWrap,
     warn,
-    ...(tabsIn.length ? [tabsBar, ...tabPanels] : [brushRow, wandBox]),
+    dragRow,
+    ...(tabsIn.length ? tabPanels : [brushRow, wandBox]),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'btn ghost full apply-others',
+        onclick: () => {
+          const d = current();
+          if (!d) return;
+          const src = structuredClone(d);
+          void applyWithScope({
+            title: 'Aplicar el estilo de este pin (fondo, borde, letras, stickers y color)',
+            ask: true,
+            preferred: 'sheet',
+            apply: (z) => {
+              if (z.id === src.id) return;
+              copyStyleScaled(src, z);
+              z.stickers = structuredClone(src.stickers);
+              z.adjust = { ...src.adjust };
+            },
+          });
+        },
+      },
+      'Aplicar a otros pines…',
+    ),
     h(
       'details',
       { class: 'more' },
-      h('summary', {}, '☰ Más opciones del pin'),
+      h('summary', {}, 'Más opciones del pin'),
       note,
       h('div', { class: 'quick' }, h('span', { class: 'label' }, 'Estilos rápidos'), h('div', { class: 'chips' }, ...presetBtns)),
       h('div', { class: 'row wrap' }, styleAll, allSizes, batchBtn),
@@ -380,11 +425,14 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
     sizeSelect.disabled = !d;
     finishedChk.checked = state.finished;
     targetBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(state.dragTarget === targets[i][0] && state.brush.mode === 'off')));
-    brushBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(state.brush.mode === brushes[i][0])));
+    brushBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(brushes[i][0] === 'erase' ? state.brush.mode === 'erase' || state.brush.mode === 'restore' : state.brush.mode === brushes[i][0])));
+    autoBtn.setAttribute('aria-pressed', String(!!d?.cutout.quick));
+    eraseBtn.setAttribute('aria-pressed', String(state.brush.mode === 'erase'));
+    restoreBtn.setAttribute('aria-pressed', String(state.brush.mode === 'restore'));
     brushRow.classList.toggle('active', state.brush.mode !== 'off');
     canvas.classList.toggle('brush', state.brush.mode !== 'off');
     wandBox.hidden = state.brush.mode !== 'wand';
-    brushSizeBox.hidden = state.brush.mode === 'wand' || state.brush.mode === 'off';
+    brushSizeBox.hidden = !(state.brush.mode === 'erase' || state.brush.mode === 'restore');
     syncTabs();
     undoBtn.disabled = !canUndo();
     redoBtn.disabled = !canRedo();
@@ -632,7 +680,7 @@ export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redra
   );
   const perName = h('input', { type: 'number', min: 1, max: 100, value: '1', class: 'num', 'aria-label': 'Pines por nombre' });
   dlg.append(
-    h('h2', { id: 'batch-title' }, '🏷 Nombres en lote'),
+    h('h2', { id: 'batch-title' }, 'Nombres en lote'),
     h('p', { class: 'muted small' }, 'Pega una lista de nombres: se crea un pin por nombre con el mismo estilo, imagen y molde del diseño actual.'),
     names,
     h('div', { class: 'row wrap' }, h('label', {}, 'El nombre va', ' ', where), h('label', {}, 'Pines por nombre', ' ', perName)),

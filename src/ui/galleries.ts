@@ -90,7 +90,7 @@ export function bgGallery(): { el: HTMLElement; refresh: () => void } {
       }),
     );
   };
-  return { el: h('div', { class: 'span-all gallery-box' }, h('span', { class: 'label' }, '✨ Fondos prediseñados (toca uno)'), grid, mineBox), refresh };
+  return { el: h('div', { class: 'span-all gallery-box' }, h('span', { class: 'label' }, 'Fondos prediseñados'), grid, mineBox), refresh };
 }
 
 /** Modelos de círculo / borde. */
@@ -117,7 +117,7 @@ export function ringGallery(): { el: HTMLElement; refresh: () => void } {
       ),
     );
   }
-  return { el: h('div', { class: 'span-all gallery-box' }, h('span', { class: 'label' }, '💍 Modelos de círculo / borde'), grid), refresh: () => {} };
+  return { el: h('div', { class: 'span-all gallery-box' }, h('span', { class: 'label' }, 'Modelos de círculo / borde'), grid), refresh: () => {} };
 }
 
 /** Estilos de letra (Quiz, Culto, WordArt, Kawaii) con vista previa del nombre escrito. */
@@ -195,5 +195,5 @@ export function wordArtGallery(): { el: HTMLElement; refresh: () => void } {
       }),
     );
   };
-  return { el: h('div', { class: 'span-all gallery-box' }, h('span', { class: 'label' }, '🅰️ Estilos de letra (toca uno)'), chips, grid), refresh: render };
+  return { el: h('div', { class: 'span-all gallery-box' }, h('span', { class: 'label' }, 'Estilos de letra'), chips, grid), refresh: render };
 }

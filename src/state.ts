@@ -2,6 +2,7 @@ import { newDesign, type Design } from './model/design';
 import { DEFAULT_SIZE_ID, loadSizes, saveSizes, type PinSize } from './model/sizes';
 import type { PackAlgo, PageSettings } from './layout/pack';
 import type { Fixed } from './layout/arrange';
+import type { FillMode } from './layout/fill';
 import { loadPaper, paperSize, savePaper, type PaperSettings } from './model/paper';
 import { DEFAULT_GUIDES, type GuideSettings } from './render/sheet';
 
@@ -42,6 +43,14 @@ export interface AppState {
   pinSel: Set<string>;
   /** posiciones fijas: 📌 fijados a mano y, en modo Libre, todos */
   fixed: Map<string, Fixed>;
+  /** "Llenar hoja" */
+  fill: { on: boolean; mode: FillMode; sheets: number; saved: Record<number, number> };
+  /** se movieron pines a mano desde el último "Ordenar" */
+  messy: boolean;
+  /** "Aplicar a": a qué pines van los cambios de los paneles */
+  applyTo: 'selected' | 'sheet' | 'all' | 'custom';
+  /** pines elegidos en "Personalizado" */
+  customIds: Set<number>;
   defSizeId: string;
   page: PageOptions;
   guides: GuideSettings;
@@ -65,6 +74,10 @@ export const state: AppState = {
   selection: new Set(),
   pinSel: new Set(),
   fixed: new Map(),
+  fill: { on: false, mode: 'equal', sheets: 1, saved: {} },
+  messy: false,
+  applyTo: 'selected',
+  customIds: new Set(),
   defSizeId: DEFAULT_SIZE_ID,
   page: { margin: 5, gap: 1.5, algo: 'auto' },
   guides: { ...DEFAULT_GUIDES },
@@ -120,8 +133,26 @@ export function setPaper(p: Partial<PaperSettings>): void {
   emit('page');
 }
 
-/** Pines a los que afectan los controles de la barra: la selección o, si no hay, el pin actual. */
+/** Ids de diseños con algún pin en la hoja que se está viendo (lo registra la vista de la hoja). */
+let sheetIdsFn: () => Set<number> = () => new Set();
+export const setSheetIdsProvider = (fn: () => Set<number>) => (sheetIdsFn = fn);
+
+/**
+ * Pines a los que afectan los controles de los paneles, según "Aplicar a":
+ * seleccionados (o el pin actual), toda la hoja, todas las hojas o personalizado.
+ */
 export function editTargets(): Design[] {
+  switch (state.applyTo) {
+    case 'all':
+      return state.designs.slice();
+    case 'sheet': {
+      const ids = sheetIdsFn();
+      return state.designs.filter((d) => ids.has(d.id));
+    }
+    case 'custom':
+      if (state.customIds.size) return state.designs.filter((d) => state.customIds.has(d.id));
+      break;
+  }
   if (state.selection.size) return state.designs.filter((d) => state.selection.has(d.id));
   const c = current();
   return c ? [c] : [];
@@ -152,6 +183,7 @@ interface Snapshot {
   designs: string;
   selId: number | null;
   fixed: string;
+  fill?: string;
 }
 
 const undoStack: Snapshot[] = [];
@@ -161,7 +193,7 @@ let lastPush = 0;
 let lastGroup = '';
 
 const fixedJson = () => JSON.stringify([...state.fixed]);
-const snap = (): Snapshot => ({ designs: JSON.stringify(state.designs), selId: state.selId, fixed: fixedJson() });
+const snap = (): Snapshot => ({ designs: JSON.stringify(state.designs), selId: state.selId, fixed: fixedJson(), fill: JSON.stringify(state.fill) });
 
 /**
  * Llamar ANTES de modificar los diseños. Los cambios seguidos del mismo
@@ -182,7 +214,7 @@ export function checkpoint(group = ''): void {
 
 /** Guarda en el historial un estado anterior ya tomado (para cambios con vista previa). */
 export function checkpointFrom(designsJson: string, selId: number | null, fixedJsonBefore: string = fixedJson()): void {
-  undoStack.push({ designs: designsJson, selId, fixed: fixedJsonBefore });
+  undoStack.push({ designs: designsJson, selId, fixed: fixedJsonBefore, fill: JSON.stringify(state.fill) });
   if (undoStack.length > MAX_HISTORY) undoStack.shift();
   redoStack.length = 0;
   lastGroup = '';
@@ -192,6 +224,7 @@ export function checkpointFrom(designsJson: string, selId: number | null, fixedJ
 function restore(s: Snapshot): void {
   state.designs = JSON.parse(s.designs) as Design[];
   state.fixed = new Map(JSON.parse(s.fixed) as [string, Fixed][]);
+  if (s.fill) state.fill = JSON.parse(s.fill);
   state.pinSel = new Set([...state.pinSel].filter((k) => state.designs.some((d) => k.startsWith(`${d.id}:`))));
   state.selId = s.selId && state.designs.some((d) => d.id === s.selId) ? s.selId : (state.designs[0]?.id ?? null);
   for (const id of state.selection) if (!state.designs.some((d) => d.id === id)) state.selection.delete(id);

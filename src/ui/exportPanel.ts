@@ -10,6 +10,12 @@ import { h } from './dom';
 import { sheetContext } from './sheetView';
 import { toast } from './toast';
 
+/** Acciones de exportar para usarlas desde otros lugares (barra inferior, vista de impresión). */
+export const exportActions = {
+  pdf: (): void => {},
+  images: (_type: 'png' | 'jpg', _ppi: number): void => {},
+};
+
 /** Sección "Imprimir / Exportar": PDF a 300 ppp y PNG/JPG por hoja a 300 o 600 ppp. */
 export function createExportPanel(): HTMLElement {
   const chk = (label: string, key: 'cut' | 'center' | 'ruler') => {
@@ -34,7 +40,7 @@ export function createExportPanel(): HTMLElement {
       // Esperar a que todas las fotos estén procesadas (quitar fondo, colores…).
       await ensureAll(state.designs);
       await job();
-      status.textContent = '✅ Listo. Al imprimir usa “Tamaño real / 100 %”, sin “sin márgenes”.';
+      status.textContent = 'Listo. Al imprimir usa “Tamaño real / 100 %”, sin “sin márgenes”.';
     } catch (e) {
       status.textContent = `No se pudo generar: ${(e as Error).message}`;
     } finally {
@@ -64,7 +70,7 @@ export function createExportPanel(): HTMLElement {
           downloadBlob(blob, `pines-rebeca-${paperShortName(state.paper).toLowerCase().replace(/\s+/g, '')}-${dateStamp()}.pdf`);
         }),
     },
-    '📄 Guardar PDF (300 ppp)',
+    'Guardar PDF (300 ppp)',
   );
 
   const imageExport = (type: 'image/png' | 'image/jpeg', ext: string) =>
@@ -90,8 +96,8 @@ export function createExportPanel(): HTMLElement {
       progress.value = 1;
     });
 
-  const pngBtn = h('button', { type: 'button', class: 'btn ghost', onclick: () => imageExport('image/png', 'png') }, '🖼 PNG por hoja');
-  const jpgBtn = h('button', { type: 'button', class: 'btn ghost', onclick: () => imageExport('image/jpeg', 'jpg') }, '🖼 JPG por hoja');
+  const pngBtn = h('button', { type: 'button', class: 'btn ghost', onclick: () => imageExport('image/png', 'png') }, 'PNG por hoja');
+  const jpgBtn = h('button', { type: 'button', class: 'btn ghost', onclick: () => imageExport('image/jpeg', 'jpg') }, 'JPG por hoja');
   const calBtn = h(
     'button',
     {
@@ -103,9 +109,14 @@ export function createExportPanel(): HTMLElement {
         toast('Hoja de calibración descargada: imprímela al 100 % y compárala con tus moldes');
       },
     },
-    '📏 Hoja de calibración (PDF)',
+    'Hoja de calibración (PDF)',
   );
   const buttons = [pdfBtn, pngBtn, jpgBtn, calBtn];
+  exportActions.pdf = () => pdfBtn.click();
+  exportActions.images = (type, res) => {
+    ppi.value = String(res);
+    (type === 'png' ? pngBtn : jpgBtn).click();
+  };
 
   return h(
     'div',
@@ -120,7 +131,7 @@ export function createExportPanel(): HTMLElement {
     h(
       'details',
       { class: 'tips' },
-      h('summary', {}, '🖨 Consejos para la Epson L8050'),
+      h('summary', {}, 'Consejos para la Epson L8050'),
       h(
         'ul',
         { class: 'small' },

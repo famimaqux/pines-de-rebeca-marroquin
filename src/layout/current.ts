@@ -13,13 +13,14 @@ function signature(): string {
     state.sizes.map((s) => [s.id, s.cutW, s.cutH]),
     pageSettings(),
     [...state.fixed],
+    state.fill.on,
   ]);
 }
 
 export function currentLayout(): Layout {
   const sig = signature();
   if (cached && cached.sig === sig) return cached.layout;
-  const layout = computeLayout(state.designs, state.sizes, pageSettings(), state.fixed);
+  const layout = computeLayout(state.designs, state.sizes, pageSettings(), state.fixed, undefined, state.fill.on);
   // Guardar las posiciones fijas finales (reubicados, Libre, hojas renumeradas) y
   // olvidar las de pines que ya no existen.
   const next = new Map(layout.fixed);

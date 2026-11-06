@@ -75,7 +75,8 @@ export function summaryText(): string {
   const used = [...count.keys()];
   const top = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
   const main = top ? ([top, L.free[top] ?? 0] as const) : undefined;
-  if (main && main[1] > 0) parts.push(`caben ${main[1]} más${used.length > 1 ? ` de ${shortName(sizeById(main[0]))}` : ''} en la última hoja`);
+  if (state.fill.on) parts.push(P === 1 ? 'hoja llena' : 'hojas llenas');
+  else if (main && main[1] > 0) parts.push(`caben ${main[1]} más${used.length > 1 ? ` de ${shortName(sizeById(main[0]))}` : ''} en la última hoja`);
   else parts.push('última hoja aprovechada al máximo');
   if (L.unfit.length) parts.push(`⚠️ ${L.unfit.length} no caben en este papel`);
   return parts.join(' · ');
@@ -125,7 +126,7 @@ export function createSheetView(hooks: SheetViewHooks): SheetViewParts {
     if (file.files) await addAndShow(file.files);
     file.value = '';
   });
-  const addBtn = h('label', { for: 'add-files', class: 'btn', role: 'button', tabindex: 0 }, '📷 Agregar imágenes');
+  const addBtn = h('label', { for: 'add-files', class: 'btn', role: 'button', tabindex: 0 }, 'Agregar imágenes');
   addBtn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -192,7 +193,7 @@ export function createSheetView(hooks: SheetViewHooks): SheetViewParts {
         toast('Se soltaron los pines fijados y todo se volvió a acomodar');
       },
     },
-    '🔄 Reacomodar todo',
+    'Ordenar de nuevo',
   );
   const modeHelp = h('p', { class: 'muted small' }, 'Arrastra un pin para moverlo: queda fijado 📌 y los demás se ordenan alrededor.');
   const margin = h('input', { type: 'range', min: 0, max: 20, step: 0.5, id: 'pg-margin' });
@@ -247,7 +248,7 @@ export function createSheetView(hooks: SheetViewHooks): SheetViewParts {
     h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Alejar', onclick: () => zoomBy(1 / 1.2) }, '−'),
     zoomOut,
     h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Acercar', onclick: () => zoomBy(1.2) }, '+'),
-    h('button', { type: 'button', class: 'btn ghost small', onclick: () => ((state.zoom = 0), emit('view')) }, '⤢ Ajustar'),
+    h('button', { type: 'button', class: 'btn ghost small', onclick: () => ((state.zoom = 0), emit('view')) }, 'Ajustar'),
     h('label', { class: 'check', for: 'ruler-chk' }, rulerChk, ' Regla'),
   );
   const finishedChk = h('input', { type: 'checkbox', id: 'finished-all' });
@@ -301,8 +302,8 @@ export function createSheetView(hooks: SheetViewHooks): SheetViewParts {
     { class: 'sheet-nav' },
     h('div', { class: 'row' }, prev, pageInfo, next),
     zoomBox,
-    h('label', { class: 'check finished-chk', for: 'finished-all' }, finishedChk, ' 👁 Terminados'),
-    h('label', { class: 'mini inline' }, h('span', { title: 'Repetir esta hoja (copias)' }, '🔁 ×'), rep),
+    h('label', { class: 'check finished-chk', for: 'finished-all' }, finishedChk, ' Ver terminados'),
+    h('label', { class: 'mini inline' }, h('span', { title: 'Repetir esta hoja (copias)' }, 'Repetir ×'), rep),
     pageTag,
   );
 
@@ -313,7 +314,7 @@ export function createSheetView(hooks: SheetViewHooks): SheetViewParts {
     'div',
     { class: 'sheet-empty' },
     h('p', { class: 'big' }, 'Tu hoja está vacía'),
-    h('p', { class: 'muted' }, 'Toca “📷 Agregar imágenes” o arrastra tus fotos aquí: cada imagen aparece como un pin y se acomoda sola.'),
+    h('p', { class: 'muted' }, 'Toca “Agregar imágenes” o arrastra tus fotos aquí: cada imagen aparece como un pin y se acomoda sola.'),
   );
   // Lupa: vista ampliada del pin terminado al pasar el mouse
   const loupe = h('canvas', { class: 'loupe', 'aria-hidden': 'true', hidden: true });
@@ -343,8 +344,12 @@ export function createSheetView(hooks: SheetViewHooks): SheetViewParts {
     if (state.zoom > 0) return state.zoom;
     const pad = state.showRuler ? RULER_PX + 14 : 14;
     // La hoja se ajusta al espacio disponible (ancho y alto del área de la hoja).
-    const availW = Math.max(160, stage.clientWidth - 20 - pad);
-    const availH = Math.max(200, stage.clientHeight - 20 - pad);
+    // El área libre es la del "scroller" (entre la barra de arriba y la de abajo).
+    const cs = getComputedStyle(scroller);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const availW = Math.max(160, scroller.clientWidth - padX - 12 - pad);
+    const availH = Math.max(200, scroller.clientHeight - padY - 12 - pad);
     return Math.max(0.6, Math.min(availW / w, availH / hh));
   }
 
@@ -377,7 +382,7 @@ export function createSheetView(hooks: SheetViewHooks): SheetViewParts {
     drawSample(sizeById(state.defSizeId));
     algo.value = state.page.algo === 'hex' ? 'auto' : state.page.algo;
     const nPinned = [...state.fixed.values()].filter((f) => f.manual).length;
-    resetBtn.textContent = nPinned ? `🔄 Reacomodar todo (soltar ${nPinned} fijado${nPinned === 1 ? '' : 's'})` : '🔄 Reacomodar todo';
+    resetBtn.textContent = nPinned ? `Ordenar de nuevo (soltar ${nPinned} fijado${nPinned === 1 ? '' : 's'})` : 'Ordenar de nuevo';
     margin.value = String(state.page.margin);
     marginOut.textContent = `${fmtNum(state.page.margin)} mm`;
     gap.value = String(state.page.gap);
