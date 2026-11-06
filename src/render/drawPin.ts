@@ -1,6 +1,7 @@
-import { bitmapSize, fontCss, type Design, type RingFinish } from '../model/design';
+import { bitmapSize, type Bitmap, type Design, type RingFinish } from '../model/design';
 import type { PinSize } from '../model/sizes';
-import { cornerRadius, traceShape, traceStar } from './shapes';
+import { sizedShapePath, tracePath, traceShape, traceStar } from './shapes';
+import { drawTexts } from './text';
 
 /**
  * Dibuja un pin completo, capa por capa (de abajo hacia arriba):
@@ -19,22 +20,23 @@ export const METALS: Record<Exclude<RingFinish, 'plano'>, string[]> = {
   rosa: ['#9a5a4e', '#f6c9bb', '#c48473', '#ffe3da', '#a8665a'],
 };
 
+/** Imágenes ya resueltas (la principal, procesada) para dibujar el pin. */
+export interface PinImages {
+  main: Bitmap | null;
+  bg: Bitmap | null;
+}
+
 export interface DrawOptions {
   /** Recortar todo a la cara visible (vista "pin terminado"). */
   faceOnly?: boolean;
 }
 
-/**
- * Traza una forma del molde de tamaño w×h concéntrica a la cara.
- * En el cuadrado redondeado, el radio de esquina crece con el margen
- * para que corte y cara queden paralelos.
- */
+/** Traza una forma del molde de tamaño w×h, concéntrica a la cara. */
 export function traceSized(ctx: Pick<CanvasPath, 'moveTo' | 'bezierCurveTo' | 'closePath'>, size: PinSize, w: number, h: number): void {
-  const r = size.shape === 'roundsq' ? Math.max(0, cornerRadius(size.faceW, size.faceH) + (w - size.faceW) / 2) : undefined;
-  traceShape(ctx, size.shape, w, h, 0, 0, r);
+  tracePath(ctx, sizedShapePath(size, w, h));
 }
 
-export function drawPin(ctx: Ctx, d: Design, size: PinSize, opts: DrawOptions = {}): void {
+export function drawPin(ctx: Ctx, d: Design, size: PinSize, imgs: PinImages, opts: DrawOptions = {}): void {
   const { cutW, cutH, faceW, faceH } = size;
   ctx.save();
   ctx.beginPath();
@@ -46,8 +48,8 @@ export function drawPin(ctx: Ctx, d: Design, size: PinSize, opts: DrawOptions = 
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(-cutW / 2, -cutH / 2, cutW, cutH);
 
-  drawBackground(ctx, d, size);
-  drawMainImage(ctx, d, size);
+  drawBackground(ctx, d, size, imgs.bg);
+  drawMainImage(ctx, d, size, imgs.main);
   drawRing(ctx, d, size);
   drawTexts(ctx, d, size);
   drawStickers(ctx, d);
@@ -57,9 +59,9 @@ export function drawPin(ctx: Ctx, d: Design, size: PinSize, opts: DrawOptions = 
 
 /* ---------- 1–3. Capa de fondo (color/degradado + imagen + patrón) ---------- */
 
-function drawBackground(ctx: Ctx, d: Design, size: PinSize): void {
+function drawBackground(ctx: Ctx, d: Design, size: PinSize, bgImage: Bitmap | null): void {
   const bg = d.bg;
-  if (bg.type === 'ninguno' && !bg.image && d.pattern.type === 'ninguno') return;
+  if (bg.type === 'ninguno' && !bgImage && d.pattern.type === 'ninguno') return;
   const bw = size.cutW;
   const bh = size.cutH;
   const R = Math.max(bw, bh) / 2;
@@ -104,12 +106,12 @@ function drawBackground(ctx: Ctx, d: Design, size: PinSize): void {
     ctx.fillRect(-E, -E, 2 * E, 2 * E);
   }
 
-  if (bg.image) {
-    const { w, h } = bitmapSize(bg.image);
+  if (bgImage) {
+    const { w, h } = bitmapSize(bgImage);
     if (w && h) {
       const s = Math.max(bw / w, bh / h);
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(bg.image, (-w * s) / 2, (-h * s) / 2, w * s, h * s);
+      ctx.drawImage(bgImage, (-w * s) / 2, (-h * s) / 2, w * s, h * s);
     }
   }
 
@@ -174,10 +176,10 @@ function drawPattern(ctx: Ctx, d: Design, extent: number): void {
 
 /* ---------- 4. Imagen principal ---------- */
 
-function drawMainImage(ctx: Ctx, d: Design, size: PinSize): void {
+function drawMainImage(ctx: Ctx, d: Design, size: PinSize, src: Bitmap | null): void {
   const im = d.image;
-  if (!im.src) return;
-  const { w, h } = bitmapSize(im.src);
+  if (!src) return;
+  const { w, h } = bitmapSize(src);
   if (!w || !h) return;
   ctx.save();
   const toFace = im.clip === 'cara';
@@ -186,15 +188,30 @@ function drawMainImage(ctx: Ctx, d: Design, size: PinSize): void {
     traceSized(ctx, size, size.faceW, size.faceH);
     ctx.clip();
   }
-  const boxW = toFace ? size.faceW : size.cutW;
-  const boxH = toFace ? size.faceH : size.cutH;
-  const base = im.fit === 'encajar' ? Math.min(boxW / w, boxH / h) : Math.max(boxW / w, boxH / h);
-  const s = base * im.zoom;
+  const s = imageScale(d, size, w, h);
   ctx.translate(im.ox, im.oy);
   ctx.rotate((im.rot * Math.PI) / 180);
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(im.src, (-w * s) / 2, (-h * s) / 2, w * s, h * s);
+  ctx.drawImage(src, (-w * s) / 2, (-h * s) / 2, w * s, h * s);
   ctx.restore();
+}
+
+/** mm por píxel de la imagen principal (de tamaño w×h) en el pin. */
+export function imageScale(d: Design, size: PinSize, w: number, h: number): number {
+  const toFace = d.image.clip === 'cara';
+  const boxW = toFace ? size.faceW : size.cutW;
+  const boxH = toFace ? size.faceH : size.cutH;
+  const base = d.image.fit === 'encajar' ? Math.min(boxW / w, boxH / h) : Math.max(boxW / w, boxH / h);
+  return base * d.image.zoom;
+}
+
+/**
+ * Resolución real de impresión (ppp) de la imagen principal:
+ * píxeles de la imagen original por pulgada en el papel.
+ */
+export function effectivePpi(d: Design, size: PinSize, origW: number, origH: number): number {
+  const mmPerPx = imageScale(d, size, origW, origH);
+  return 25.4 / mmPerPx;
 }
 
 /* ---------- 5. Borde / aro ---------- */
@@ -206,12 +223,6 @@ function ringPaint(ctx: Ctx, d: Design, size: PinSize): string | CanvasGradient 
   const g = ctx.createLinearGradient(-size.cutW / 2, -size.cutH / 2, size.cutW / 2, size.cutH / 2);
   stops.forEach((c, i) => g.addColorStop(i / (stops.length - 1), c));
   return g;
-}
-
-/** Cuánto ocupa el borde hacia adentro de la cara (para que el texto no lo pise). */
-export function ringInset(d: Design): number {
-  // Todos los tipos de borde terminan a `width` mm por dentro de la cara.
-  return d.ring.type === 'ninguno' ? 0 : Math.max(0, d.ring.width);
 }
 
 function drawRing(ctx: Ctx, d: Design, size: PinSize): void {
@@ -256,67 +267,6 @@ function drawRing(ctx: Ctx, d: Design, size: PinSize): void {
       traceSized(ctx, size, fw - 2 * w, fh - 2 * w);
       ctx.fill('evenodd');
       break;
-  }
-  ctx.restore();
-}
-
-/* ---------- 6. Texto (curvo en círculo, recto en las demás formas) ---------- */
-
-/** Escribe `text` siguiendo un arco de radio r (arriba o abajo, siempre legible). */
-function arcText(ctx: Ctx, text: string, r: number, top: boolean, fs: number, outline: boolean): void {
-  const chars = [...text];
-  const gap = fs * 0.06;
-  const widths = chars.map((c) => ctx.measureText(c).width + gap);
-  const total = widths.reduce((a, b) => a + b, 0) - gap;
-  const dir = top ? 1 : -1;
-  let ang = top ? -Math.PI / 2 - total / r / 2 : Math.PI / 2 + total / r / 2;
-  chars.forEach((c, i) => {
-    const half = (widths[i] - gap) / 2 / r;
-    ang += dir * half;
-    ctx.save();
-    ctx.rotate(top ? ang + Math.PI / 2 : ang - Math.PI / 2);
-    ctx.translate(0, top ? -r : r);
-    if (outline) ctx.strokeText(c, 0, 0);
-    ctx.fillText(c, 0, 0);
-    ctx.restore();
-    ang += dir * (half + gap / r);
-  });
-}
-
-function drawTexts(ctx: Ctx, d: Design, size: PinSize): void {
-  const t = d.text;
-  if (!t.top && !t.bottom) return;
-  const fs = Math.max(0.5, t.size);
-  ctx.save();
-  ctx.font = fontCss(t.font, fs);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = t.color;
-  if (t.outline) {
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = fs * 0.22;
-    ctx.lineJoin = 'round';
-  }
-  const band = d.ring.type === 'banda';
-  if (size.shape === 'circle') {
-    // Sobre la banda: centrado en ella. Si no, por dentro del borde.
-    const rad = band ? size.faceW / 2 - d.ring.width / 2 - t.inset * 0.3 : size.faceW / 2 - ringInset(d) - fs * 0.55 - t.inset;
-    if (rad > fs) {
-      if (t.top) arcText(ctx, t.top, rad, true, fs, t.outline);
-      if (t.bottom) arcText(ctx, t.bottom, rad, false, fs, t.outline);
-    }
-  } else {
-    const maxW = size.faceW * 0.7;
-    const put = (s: string, y: number) => {
-      if (t.outline) ctx.strokeText(s, 0, y, maxW);
-      ctx.fillText(s, 0, y, maxW);
-    };
-    const edge = size.faceH / 2 - ringInset(d) - fs * 0.6 - t.inset;
-    // El corazón es más angosto abajo: el texto inferior va más arriba.
-    const topY = size.shape === 'heart' ? -size.faceH * 0.18 : -edge;
-    const botY = size.shape === 'heart' ? size.faceH * 0.2 : edge;
-    if (t.top) put(t.top, topY);
-    if (t.bottom) put(t.bottom, botY);
   }
   ctx.restore();
 }

@@ -1,4 +1,4 @@
-import type { Shape } from '../model/sizes';
+import type { PinSize, Shape } from '../model/sizes';
 
 /**
  * Cada forma se describe como un punto inicial + curvas bézier cúbicas.
@@ -116,4 +116,14 @@ export function traceStar(ctx: Pick<CanvasPath, 'moveTo' | 'lineTo' | 'closePath
     else ctx.moveTo(px, py);
   }
   ctx.closePath();
+}
+
+/**
+ * Forma del molde de tamaño w×h, concéntrica a la cara. En el cuadrado
+ * redondeado el radio de esquina crece con el margen para que corte y cara
+ * queden paralelos.
+ */
+export function sizedShapePath(size: PinSize, w: number, h: number, cx = 0, cy = 0): ShapePath {
+  const r = size.shape === 'roundsq' ? Math.max(0, cornerRadius(size.faceW, size.faceH) + (w - size.faceW) / 2) : undefined;
+  return shapePath(size.shape, w, h, cx, cy, r);
 }

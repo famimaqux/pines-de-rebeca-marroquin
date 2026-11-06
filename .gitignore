@@ -5,3 +5,4 @@ dist
 # Archivos de referencia locales (no publicar)
 PROMPT_claude_code.md
 prototipo_pines_rebeca.html
+public/ai/
