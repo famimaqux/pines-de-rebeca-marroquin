@@ -2,7 +2,7 @@ import { EMOJIS, EPSON_ADJUST, FONTS, NEUTRAL_ADJUST, fontCss, newDesign, newSti
 import { LETTERING, applyLettering } from '../model/lettering';
 import { addImageBlob } from '../image/store';
 import { layoutLine, paintGlyphs } from '../render/text';
-import { checkpoint, current, emit } from '../state';
+import { checkpoint, current, editTargets, emit } from '../state';
 import { fmtNum, h, uniqueId } from './dom';
 import { toast } from './toast';
 import { applyWithScope } from './applyScope';
@@ -52,7 +52,7 @@ type Ctl =
   | { kind: 'select'; path: string; label: string; options: [string, string][]; show?: Cond; font?: boolean }
   | { kind: 'check'; path: string; label: string; show?: Cond }
   | { kind: 'text'; path: string; label: string; placeholder?: string; show?: Cond; wide?: boolean }
-  | { kind: 'image'; path: string; label: string; show?: Cond; onSet?: (d: Design) => void }
+  | { kind: 'image'; path: string; label: string; show?: Cond; onSet?: (d: Design) => void; button?: string }
   | { kind: 'custom'; build: () => { el: HTMLElement; refresh: () => void }; show?: Cond };
 
 interface Section {
@@ -147,7 +147,14 @@ function letteringGallery(): { el: HTMLElement; refresh: () => void } {
   return { el, refresh: paint };
 }
 
-export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLElement; refresh(): void } {
+export interface LayersPanel {
+  el: HTMLElement;
+  /** contenido de cada sección por id (fondo, patron, imagen, quitar, mejora, borde, texto, stickers) */
+  parts: Record<string, HTMLElement>;
+  refresh(): void;
+}
+
+export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
   const SECTIONS: Section[] = [
     {
       id: 'fondo',
@@ -155,9 +162,16 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
       open: true,
       controls: [
         {
+          kind: 'image',
+          path: 'bg.imageId',
+          label: '🖼 Imagen de fondo propia (foto, textura, papel decorado)',
+          button: '📁 Cargar imagen de fondo…',
+          onSet: (d) => Object.assign(d.bg, { ox: 0, oy: 0, zoom: 1, rot: 0 }),
+        },
+        {
           kind: 'select',
           path: 'bg.type',
-          label: 'Tipo',
+          label: 'Color de fondo',
           options: [
             ['ninguno', 'Ninguno (blanco)'],
             ['solido', 'Color sólido'],
@@ -169,7 +183,6 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
         },
         { kind: 'color', path: 'bg.c1', label: 'Color 1', show: hasColor },
         { kind: 'color', path: 'bg.c2', label: 'Color 2', show: gradient },
-        { kind: 'image', path: 'bg.imageId', label: '2 · Imagen de fondo (foto, textura, papel decorado)', onSet: (d) => Object.assign(d.bg, { ox: 0, oy: 0, zoom: 1, rot: 0 }) },
         { kind: 'range', path: 'bg.ox', label: 'Mover ↔', min: -50, max: 50, step: 0.5, unit: 'mm', reset: 0 },
         { kind: 'range', path: 'bg.oy', label: 'Mover ↕', min: -50, max: 50, step: 0.5, unit: 'mm', reset: 0 },
         { kind: 'range', path: 'bg.zoom', label: 'Zoom', min: 0.3, max: 4, step: 0.05, unit: '×', reset: 1 },
@@ -307,6 +320,32 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
             return { el: h('div', { class: 'row wrap span-all' }, epson, reset), refresh: () => {} };
           },
         },
+        {
+          kind: 'custom',
+          build: () => {
+            const b = h(
+              'button',
+              {
+                type: 'button',
+                class: 'btn small',
+                onclick: () => {
+                  if (!current()) return;
+                  void applyWithScope({
+                    title: '🌈 Mejorar colores: más vivos y claritos',
+                    preferred: 'selected',
+                    apply: (z) => (z.adjust = { ...z.adjust, auto: 1 }),
+                  }).then((n) => n && toast('Colores mejorados. Ajusta la intensidad con “Mejora automática”.', 3500));
+                },
+              },
+              '🌈 Mejorar colores',
+            );
+            return {
+              el: h('div', { class: 'span-all' }, b, h('p', { class: 'muted small' }, 'Para fotos opacas u oscuras: estira los colores, aclara los tonos medios y aviva los colores apagados.')),
+              refresh: () => {},
+            };
+          },
+        },
+        { kind: 'range', path: 'adjust.auto', label: 'Mejora automática', min: 0, max: 1, step: 0.05, pct: true, reset: 0 },
         { kind: 'range', path: 'adjust.bright', label: 'Brillo', min: 0.5, max: 1.6, step: 0.01, pct: true, reset: 1 },
         { kind: 'range', path: 'adjust.contrast', label: 'Contraste', min: 0.5, max: 1.8, step: 0.01, pct: true, reset: 1 },
         { kind: 'range', path: 'adjust.sat', label: 'Saturación', min: 0, max: 2, step: 0.01, pct: true, reset: 1 },
@@ -390,6 +429,13 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
         { kind: 'color', path: 'text.effectColor', label: 'Color del efecto', show: (d) => d.text.effect === '3d' || d.text.effect === 'neon' },
         { kind: 'range', path: 'text.middleSize', label: 'Tamaño del centro', min: 3, max: 30, step: 0.25, unit: 'mm', show: (d) => !!d.text.middle },
         { kind: 'range', path: 'text.middleY', label: 'Altura del centro', min: -30, max: 30, step: 0.25, unit: 'mm', show: (d) => !!d.text.middle, reset: 0 },
+        { kind: 'range', path: 'text.ox', label: 'Mover letras ↔', min: -40, max: 40, step: 0.25, unit: 'mm', show: hasText, reset: 0 },
+        { kind: 'range', path: 'text.oy', label: 'Mover letras ↕', min: -40, max: 40, step: 0.25, unit: 'mm', show: hasText, reset: 0 },
+        {
+          kind: 'custom',
+          show: hasText,
+          build: () => ({ el: h('p', { class: 'muted small span-all' }, '✋ También puedes arrastrar las letras con el dedo o el mouse: en el editor del pin elige “Al arrastrar mueves: Letras”.'), refresh: () => {} }),
+        },
         { kind: 'range', path: 'text.size', label: 'Tamaño arriba/abajo', min: 2, max: 14, step: 0.25, unit: 'mm', show: (d) => !!(d.text.top || d.text.bottom) },
         { kind: 'range', path: 'text.inset', label: 'Hacia el centro', min: -3, max: 12, step: 0.25, unit: 'mm', show: (d) => !!(d.text.top || d.text.bottom) },
         applyToOthers('el estilo de letras', (s, z, withText) => copyTextStyle(s, z, withText), { label: 'Aplicar también el texto (el mismo en todos)', checked: false }),
@@ -405,12 +451,13 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
     const id = uniqueId('ctl');
     const wrap = h('div', { class: `field field-${ctl.kind}` });
     if (ctl.kind === 'text' && ctl.wide) wrap.classList.add('span-all');
+    // Los controles cambian todos los pines seleccionados (o el pin actual si no hay selección).
     const set = (path: string, v: unknown, group?: string) => {
-      const dd = d();
-      if (!dd) return;
+      const targets = editTargets();
+      if (!targets.length) return;
       checkpoint(group);
-      setPath(dd, path, v);
-      emit('design');
+      for (const t of targets) setPath(t, path, v);
+      emit('design', 'list');
     };
     switch (ctl.kind) {
       case 'range': {
@@ -474,7 +521,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
       }
       case 'image': {
         const inp = h('input', { id, type: 'file', accept: 'image/*', class: 'visually-hidden' });
-        const pick = h('label', { for: id, class: 'btn small', role: 'button', tabindex: 0 }, 'Elegir imagen…');
+        const pick = h('label', { for: id, class: 'btn small', role: 'button', tabindex: 0 }, ctl.button ?? 'Elegir imagen…');
         pick.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -485,14 +532,17 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
         inp.addEventListener('change', async () => {
           const f = inp.files?.[0];
           inp.value = '';
-          const dd = d();
-          if (!f || !dd) return;
+          const targets = editTargets();
+          if (!f || !targets.length) return;
           try {
             const rec = await addImageBlob(f);
             checkpoint();
-            setPath(dd, ctl.path, rec.id);
-            ctl.onSet?.(dd);
+            for (const t of targets) {
+              setPath(t, ctl.path, rec.id);
+              ctl.onSet?.(t);
+            }
             emit('design', 'list');
+            if (targets.length > 1) toast(`Imagen puesta en ${targets.length} pines seleccionados`);
           } catch {
             toast(`No se pudo leer ${f.name}`);
           }
@@ -503,7 +553,7 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
           const dd = d();
           const has = !!(dd && getPath(dd, ctl.path));
           clear.hidden = !has;
-          pick.textContent = has ? 'Cambiar imagen…' : 'Elegir imagen…';
+          pick.textContent = has ? (ctl.button ? '📁 Cambiar imagen de fondo…' : 'Cambiar imagen…') : (ctl.button ?? 'Elegir imagen…');
         });
         break;
       }
@@ -596,14 +646,19 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): { el: HTMLEleme
     '+ Agregar sticker',
   );
 
+  const parts: Record<string, HTMLElement> = {};
   for (const sec of SECTIONS) {
-    el.append(h('details', { open: !!sec.open, id: `sec-${sec.id}` }, h('summary', {}, sec.title), h('div', { class: 'fields' }, ...sec.controls.map(field))));
+    const body = h('div', { class: 'fields', id: `sec-${sec.id}` }, ...sec.controls.map(field));
+    parts[sec.id] = body;
+    el.append(h('details', { open: !!sec.open }, h('summary', {}, sec.title), body));
   }
   const stickersApply = field(applyToOthers('los stickers', (s, z) => copyStickers(s, z)));
-  el.append(h('details', { id: 'sec-stickers' }, h('summary', {}, '7 · Stickers'), h('div', { class: 'fields' }, stickerList, addSticker, stickersApply)));
+  parts.stickers = h('div', { class: 'fields', id: 'sec-stickers' }, stickerList, addSticker, stickersApply);
+  el.append(h('details', {}, h('summary', {}, '7 · Stickers'), parts.stickers));
 
   return {
     el,
+    parts,
     refresh() {
       for (const r of refreshers) r();
       renderStickers();

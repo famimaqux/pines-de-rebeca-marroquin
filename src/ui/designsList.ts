@@ -2,7 +2,7 @@ import { cloneDesign, newDesign } from '../model/design';
 import { applyPreset } from '../model/presets';
 import { MAX_QTY } from '../layout/sheets';
 import { addImageBlob } from '../image/store';
-import { addDesign, checkpoint, current, emit, sizeById, state, subscribe } from '../state';
+import { addDesign, checkpoint, current, emit, selectOnly, sizeById, state, subscribe } from '../state';
 import { h } from './dom';
 import { renderThumb } from './preview';
 import { imagesFor } from './resources';
@@ -12,18 +12,21 @@ import { toast } from './toast';
 export async function addFiles(files: Iterable<File>): Promise<void> {
   const list = [...files].filter((f) => f.type.startsWith('image/'));
   if (!list.length) return;
-  let ok = 0;
+  const added: number[] = [];
   checkpoint();
   for (const f of list) {
     try {
       const rec = await addImageBlob(f);
-      addDesign(newDesign(state.defSizeId, rec.id));
-      ok++;
+      added.push(addDesign(newDesign(state.defSizeId, rec.id)).id);
     } catch {
       toast(`No se pudo leer ${f.name}`);
     }
   }
-  if (ok) toast(`${ok} imagen(es) agregada(s) como pines de ${sizeById(state.defSizeId).name}`);
+  // Los pines nuevos quedan seleccionados: lo que cambies en la barra se les aplica.
+  if (added.length) {
+    selectOnly(added);
+    toast(`${added.length} imagen(es) agregada(s) como pines de ${sizeById(state.defSizeId).name} (quedan seleccionadas)`);
+  }
 }
 
 export interface StripHooks {
@@ -43,6 +46,7 @@ export function createDesignsStrip(hooks: StripHooks): HTMLElement {
         applyPreset(d, 'Kawaii');
         d.text.middle = 'Tu nombre';
         addDesign(d);
+        selectOnly([d.id]);
         hooks.openEditor();
       },
     },
@@ -85,10 +89,16 @@ export function createDesignsStrip(hooks: StripHooks): HTMLElement {
             type: 'button',
             class: 'pick',
             title: `${label} · ${s.name} (doble clic para editar)`,
-            'aria-pressed': String(d.id === state.selId),
-            onclick: () => {
-              state.selId = d.id;
-              emit('list', 'design', 'view');
+            'aria-pressed': String(state.selection.has(d.id)),
+            onclick: (e: Event) => {
+              const me = e as MouseEvent;
+              if (me.ctrlKey || me.metaKey || me.shiftKey) {
+                // Ctrl/Mayús + clic: sumar o quitar de la selección
+                if (state.selection.has(d.id)) state.selection.delete(d.id);
+                else state.selection.add(d.id);
+                state.selId = d.id;
+                emit('list', 'design', 'view');
+              } else selectOnly([d.id]);
             },
             ondblclick: () => hooks.openEditor(),
           },
@@ -103,8 +113,7 @@ export function createDesignsStrip(hooks: StripHooks): HTMLElement {
             title: 'Editar',
             'aria-label': `Editar ${label}`,
             onclick: () => {
-              state.selId = d.id;
-              emit('list', 'design', 'view');
+              selectOnly([d.id]);
               hooks.openEditor();
             },
           },
@@ -146,7 +155,7 @@ export function createDesignsStrip(hooks: StripHooks): HTMLElement {
         );
         return h(
           'li',
-          { class: d.id === state.selId ? 'item on' : 'item' },
+          { class: state.selection.has(d.id) ? 'item on' : 'item' },
           pick,
           h('div', { class: 'item-actions' }, h('label', { class: 'mini inline' }, h('span', {}, '×'), qty), edit, dup, del),
         );
@@ -154,7 +163,7 @@ export function createDesignsStrip(hooks: StripHooks): HTMLElement {
     );
     for (const d of state.designs) {
       const c = thumbs.get(d.id);
-      if (c) renderThumb(c, d, sizeById(d.sizeId), imagesFor(d), 48);
+      if (c) renderThumb(c, d, sizeById(d.sizeId), imagesFor(d), 40);
     }
   }
 
@@ -163,10 +172,10 @@ export function createDesignsStrip(hooks: StripHooks): HTMLElement {
     else if (k.has('design')) {
       const d = current();
       const c = d && thumbs.get(d.id);
-      if (d && c) renderThumb(c, d, sizeById(d.sizeId), imagesFor(d), 48);
+      if (d && c) renderThumb(c, d, sizeById(d.sizeId), imagesFor(d), 40);
     }
   });
 
   renderList();
-  return h('section', { class: 'card strip-card', 'aria-label': 'Tus diseños' }, h('div', { class: 'row wrap between' }, h('h2', {}, 'Tus diseños'), count, h('div', { class: 'row' }, blank, clearBtn)), list);
+  return h('section', { class: 'strip-card', 'aria-label': 'Tus diseños' }, h('div', { class: 'strip-head' }, h('strong', {}, 'Tus diseños'), count, h('span', { class: 'spacer' }), blank, clearBtn), list);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adjustColor, applyMask, processPixels, removeBackground, unsharp, type Pixels } from '../src/image/pixels';
+import { adjustColor, applyMask, autoEnhance, processPixels, removeBackground, unsharp, type Pixels } from '../src/image/pixels';
 
 /** Imagen de prueba: fondo blanco con un cuadrado rojo en el centro (y un hueco blanco dentro). */
 function testImage(w = 40, h = 40): Pixels {
@@ -97,4 +97,69 @@ describe('pincel borrar / restaurar', () => {
     applyMask(img, before, new Uint8ClampedArray(img.data.length));
     expect(img.data).toEqual(before);
   });
+});
+
+describe('mejorar colores', () => {
+  /** Foto "opaca": colores apagados y oscuros (entre 60 y 140). */
+  function dull(): Pixels {
+    const w = 30;
+    const h = 30;
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < w * h; i++) {
+      const t = i / (w * h);
+      data[i * 4] = 60 + 80 * t;
+      data[i * 4 + 1] = 70 + 40 * t;
+      data[i * 4 + 2] = 90 - 20 * t;
+      data[i * 4 + 3] = 255;
+    }
+    return { data, width: w, height: h };
+  }
+  const stats = (p: Pixels) => {
+    let lum = 0;
+    let sat = 0;
+    const n = p.data.length / 4;
+    for (let i = 0; i < p.data.length; i += 4) {
+      const [r, g, b] = [p.data[i], p.data[i + 1], p.data[i + 2]];
+      lum += 0.299 * r + 0.587 * g + 0.114 * b;
+      const mx = Math.max(r, g, b);
+      sat += mx ? (mx - Math.min(r, g, b)) / mx : 0;
+    }
+    return { lum: lum / n, sat: sat / n };
+  };
+
+  it('aclara y aviva una foto opaca', () => {
+    const img = dull();
+    const before = stats(img);
+    autoEnhance(img, 1);
+    const after = stats(img);
+    expect(after.lum).toBeGreaterThan(before.lum + 15);
+    expect(after.sat).toBeGreaterThan(before.sat);
+  });
+
+  it('intensidad 0 no cambia nada y no toca lo transparente', () => {
+    const img = dull();
+    const copy = new Uint8ClampedArray(img.data);
+    autoEnhance(img, 0);
+    expect(img.data).toEqual(copy);
+    img.data[3] = 0;
+    const r0 = img.data[0];
+    autoEnhance(img, 1);
+    expect(img.data[0]).toBe(r0);
+  });
+});
+
+it('mejorar colores conserva el tono (un rosa no se vuelve morado)', () => {
+  const w = 20;
+  const data = new Uint8ClampedArray(w * w * 4);
+  for (let i = 0; i < w * w; i++) {
+    const pink = i % 3 === 0;
+    data.set(pink ? [240, 90, 150, 255] : [255, 255, 255, 255], i * 4);
+  }
+  const img = { data, width: w, height: w };
+  autoEnhance(img, 1);
+  const [r, g, b] = img.data.slice(0, 3);
+  // sigue siendo rosa: rojo dominante y más azul que verde
+  expect(r).toBeGreaterThan(200);
+  expect(r).toBeGreaterThan(b);
+  expect(b).toBeGreaterThan(g);
 });

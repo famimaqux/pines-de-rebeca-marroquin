@@ -2,25 +2,38 @@ import './style.css';
 import { loadFonts } from './fonts';
 import { onProcessed } from './image/processor';
 import { MAX_QTY } from './layout/sheets';
-import { checkpoint, current, emit, redo, setSizes, state, subscribe, undo } from './state';
+import { setSizeLookup } from './model/styleCopy';
+import { checkpoint, current, editTargets, emit, redo, selectOnly, setSizes, sizeById, state, subscribe, undo } from './state';
 import { h } from './ui/dom';
 import { createDesignsStrip } from './ui/designsList';
 import { createEditor } from './ui/editor';
+import { createExportPanel } from './ui/exportPanel';
 import { createLayersPanel } from './ui/layersPanel';
 import { createSheetView, qtyActions } from './ui/sheetView';
 import { createSizesPanel } from './ui/sizesPanel';
 import { toast } from './ui/toast';
-import { setSizeLookup } from './model/styleCopy';
-import { sizeById } from './state';
 
 setSizeLookup(sizeById);
 
 const app = document.querySelector<HTMLElement>('#app')!;
+document.body.classList.add('workspace-mode');
 
-/* ---------- Editor en panel lateral ---------- */
+/* ---------- Piezas ---------- */
 const layers = createLayersPanel();
 const editor = createEditor();
+const sheet = createSheetView({ openEditor });
+const strip = createDesignsStrip({ openEditor });
+const exportPanel = createExportPanel();
 
+/* ---------- Barra lateral ---------- */
+const statusText = h('strong', { class: 'sel-text', 'aria-live': 'polite' });
+const editBtn = h('button', { type: 'button', class: 'btn small', onclick: () => openEditor() }, '✎ Editar pin');
+const selAllBtn = h('button', { type: 'button', class: 'btn ghost small', onclick: () => selectOnly(state.designs.map((d) => d.id)) }, 'Seleccionar todos');
+const clearSelBtn = h('button', { type: 'button', class: 'btn ghost small', onclick: () => (state.selection.clear(), emit('list', 'view')) }, 'Quitar selección');
+const handle = h('button', { type: 'button', class: 'side-handle', 'aria-label': 'Mostrar u ocultar el panel', 'aria-expanded': 'false' }, h('span', {}));
+const status = h('div', { class: 'side-status' }, handle, statusText, h('div', { class: 'row wrap' }, editBtn, selAllBtn, clearSelBtn));
+
+// Editor detallado (doble clic): se abre dentro de la misma barra.
 const drawerQty = h('input', { type: 'number', min: 0, max: MAX_QTY, class: 'num', 'aria-label': 'Cantidad de este pin' });
 drawerQty.addEventListener('change', () => {
   const d = current();
@@ -30,74 +43,99 @@ drawerQty.addEventListener('change', () => {
   emit('list');
 });
 const drawerQtyActions = h('div', {});
-const closeBtn = h('button', { type: 'button', class: 'btn-icon close', 'aria-label': 'Cerrar el editor', onclick: () => closeEditor() }, '✕');
-const drawer = h(
-  'aside',
-  { class: 'drawer', 'aria-label': 'Editor del pin', hidden: true, tabindex: -1 },
-  h(
-    'div',
-    { class: 'drawer-head' },
-    h('h2', {}, '✎ Editar pin'),
-    h('label', { class: 'mini inline' }, h('span', {}, 'Cantidad ×'), drawerQty),
-    drawerQtyActions,
-    closeBtn,
-  ),
-  h('div', { class: 'drawer-body' }, editor.el, h('section', { class: 'card layers-card', 'aria-labelledby': 'layers-title' }, h('h2', { id: 'layers-title' }, 'Capas del pin'), layers.el)),
+const editorBox = h(
+  'div',
+  { class: 'side-editor', hidden: true },
+  h('button', { type: 'button', class: 'btn ghost small back', onclick: () => closeEditor() }, '← Volver a la hoja'),
+  h('div', { class: 'row wrap' }, h('label', { class: 'mini inline' }, h('span', {}, 'Cantidad ×'), drawerQty)),
+  drawerQtyActions,
+  editor.el,
 );
 
+const sizesDlg = h('dialog', { class: 'dialog wide', 'aria-label': 'Medidas de los moldes' });
+sizesDlg.append(createSizesPanel({ getSizes: () => state.sizes, setSizes }), h('div', { class: 'row end' }, h('button', { type: 'button', class: 'btn', onclick: () => sizesDlg.close() }, 'Cerrar')));
+document.body.append(sizesDlg);
+
+const blank = (txt: string) => h('p', { class: 'muted small need-target' }, txt);
+const NEED = 'Selecciona uno o más pines en la hoja (o en la tira de abajo) para cambiarlos.';
+
+interface SideSection {
+  id: string;
+  title: string;
+  body: HTMLElement[];
+  open?: boolean;
+  /** solo tiene sentido con un pin elegido */
+  design?: boolean;
+  /** se ve también dentro del editor detallado */
+  inEditor?: boolean;
+}
+const sections: SideSection[] = [
+  { id: 'papel', title: '📄 Papel', body: [sheet.paperBox] },
+  { id: 'imagenes', title: '📷 Imágenes', body: [sheet.imagesBox, blank(NEED), layers.parts.imagen, layers.parts.quitar], open: true, inEditor: true },
+  {
+    id: 'tamano',
+    title: '⭕ Tamaño',
+    body: [sheet.sizeBox, h('button', { type: 'button', class: 'btn ghost small', onclick: () => sizesDlg.showModal() }, '📏 Editar medidas de los moldes…')],
+    open: true,
+  },
+  { id: 'fondo', title: '🎨 Fondo', body: [blank(NEED), layers.parts.fondo, h('h3', { class: 'sub' }, 'Patrón'), layers.parts.patron], design: true, inEditor: true },
+  { id: 'borde', title: '💍 Borde / modelo de círculo', body: [blank(NEED), layers.parts.borde], design: true, inEditor: true },
+  { id: 'letras', title: '🔤 Letras', body: [blank(NEED), layers.parts.texto], design: true, inEditor: true },
+  { id: 'stickers', title: '⭐ Stickers', body: [blank(NEED), layers.parts.stickers], design: true, inEditor: true },
+  { id: 'color', title: '🌈 Color de impresión', body: [blank(NEED), layers.parts.mejora], design: true, inEditor: true },
+  { id: 'acomodo', title: '🧩 Acomodo', body: [sheet.layoutBox] },
+  { id: 'exportar', title: '🖨 Imprimir / Exportar', body: [exportPanel] },
+];
+const sectionEls = sections.map((s) => {
+  const d = h('details', { class: `side-sec${s.design ? ' design' : ''}`, open: !!s.open, 'data-id': s.id }, h('summary', {}, s.title), h('div', { class: 'side-body' }, ...s.body));
+  return { s, d };
+});
+const side = h('aside', { class: 'sidebar', 'aria-label': 'Controles' }, status, editorBox, h('div', { class: 'side-sections' }, ...sectionEls.map((x) => x.d)));
+
+const setExpanded = (open: boolean) => {
+  side.classList.toggle('expanded', open);
+  handle.setAttribute('aria-expanded', String(open));
+};
+handle.addEventListener('click', () => setExpanded(!side.classList.contains('expanded')));
+// Celular: deslizar hacia arriba abre el panel y hacia abajo lo cierra.
+let swipeY: number | null = null;
+status.addEventListener('pointerdown', (e) => (swipeY = e.clientY));
+status.addEventListener('pointerup', (e) => {
+  if (swipeY === null) return;
+  const dy = e.clientY - swipeY;
+  swipeY = null;
+  if (dy < -30) setExpanded(true);
+  else if (dy > 30) setExpanded(false);
+});
+
+/* ---------- Área de la hoja ---------- */
+const undoBtn = h('button', { type: 'button', class: 'btn-icon', title: 'Deshacer (Ctrl+Z)', 'aria-label': 'Deshacer', onclick: () => undo() || toast('Nada que deshacer') }, '↶');
+const redoBtn = h('button', { type: 'button', class: 'btn-icon', title: 'Rehacer (Ctrl+Y)', 'aria-label': 'Rehacer', onclick: () => redo() || toast('Nada que rehacer') }, '↷');
+sheet.el.querySelector('.sheet-nav')?.append(h('span', { class: 'spacer' }), undoBtn, redoBtn);
+const mainArea = h('div', { class: 'main-area' }, sheet.el, strip, sheet.summary);
+
+app.replaceChildren(h('div', { class: 'workspace' }, side, mainArea));
+
+/* ---------- Editor dentro de la barra ---------- */
 let lastFocus: HTMLElement | null = null;
 function openEditor() {
-  if (!current()) return toast('Primero elige un pin en la hoja o en tus diseños');
+  const d = current();
+  if (!d) return toast('Primero elige un pin en la hoja o en la tira de diseños');
+  if (!state.selection.has(d.id)) state.selection = new Set([d.id]);
   if (!state.editorOpen) lastFocus = document.activeElement as HTMLElement | null;
   state.editorOpen = true;
-  emit('view', 'design');
-  requestAnimationFrame(() => drawer.focus());
+  side.classList.add('expanded');
+  emit('view', 'design', 'list');
+  requestAnimationFrame(() => {
+    side.scrollTop = 0;
+    editorBox.querySelector<HTMLElement>('.back')?.focus();
+  });
 }
 function closeEditor() {
   state.editorOpen = false;
   emit('view');
   lastFocus?.focus();
 }
-
-/* ---------- Pestañas ---------- */
-const sheetView = createSheetView({ openEditor });
-const strip = createDesignsStrip({ openEditor });
-
-// La tira de miniaturas va entre la barra de herramientas y la hoja.
-sheetView.el.insertBefore(strip, sheetView.el.querySelector('.sheet-nav'));
-const sheetTab = h('div', { class: 'sheet-tab' }, sheetView.el);
-const sizesTab = h('div', { class: 'stack' }, createSizesPanel({ getSizes: () => state.sizes, setSizes }));
-
-const tabs = [
-  { id: 'hoja', label: '🗒 Hoja', panel: sheetTab },
-  { id: 'medidas', label: '📏 Medidas', panel: sizesTab },
-];
-const tabBar = h('nav', { class: 'tabs', role: 'tablist', 'aria-label': 'Secciones' });
-const undoBtn = h('button', { type: 'button', class: 'btn ghost small', title: 'Deshacer (Ctrl+Z)', onclick: () => undo() || toast('Nada que deshacer') }, '↶');
-const redoBtn = h('button', { type: 'button', class: 'btn ghost small', title: 'Rehacer (Ctrl+Y)', onclick: () => redo() || toast('Nada que rehacer') }, '↷');
-
-function showTab(id: string) {
-  for (const t of tabs) {
-    const on = t.id === id;
-    t.panel.hidden = !on;
-    document.getElementById(`tab-${t.id}`)?.setAttribute('aria-selected', String(on));
-  }
-  try {
-    localStorage.setItem('pines-rebeca.tab', id);
-  } catch {
-    /* sin almacenamiento */
-  }
-  emit('view');
-}
-for (const t of tabs) {
-  t.panel.setAttribute('role', 'tabpanel');
-  t.panel.id = `panel-${t.id}`;
-  t.panel.setAttribute('aria-labelledby', `tab-${t.id}`);
-  tabBar.append(h('button', { type: 'button', role: 'tab', id: `tab-${t.id}`, 'aria-controls': `panel-${t.id}`, onclick: () => showTab(t.id) }, t.label));
-}
-tabBar.append(h('span', { class: 'spacer' }), undoBtn, redoBtn);
-
-app.replaceChildren(tabBar, ...tabs.map((t) => t.panel), sheetView.summary, drawer);
 
 /* ---------- Atajos de teclado ---------- */
 document.addEventListener('keydown', (e) => {
@@ -121,12 +159,21 @@ document.addEventListener('keydown', (e) => {
 
 /* ---------- Refrescos ---------- */
 let qtySig = '';
-subscribe((k) => {
+subscribe(() => {
   const d = current();
   if (state.editorOpen && !d) state.editorOpen = false;
-  drawer.hidden = !state.editorOpen;
-  document.body.classList.toggle('drawer-open', state.editorOpen);
-  if (state.editorOpen && (k.has('design') || k.has('list') || k.has('view') || k.has('sizes'))) layers.refresh();
+  const targets = editTargets();
+  const n = state.selection.size;
+  const pins = targets.reduce((a, x) => a + x.qty, 0);
+  statusText.textContent = n ? `${n === 1 ? '1 diseño seleccionado' : `${n} diseños seleccionados`} · ${pins} pin${pins === 1 ? '' : 'es'}` : 'Nada seleccionado';
+  editBtn.disabled = !d;
+  clearSelBtn.hidden = !n;
+  selAllBtn.hidden = !state.designs.length || n === state.designs.length;
+  side.classList.toggle('no-target', !n && !state.editorOpen);
+  side.classList.toggle('editing', state.editorOpen);
+  editorBox.hidden = !state.editorOpen;
+  for (const { s, d: el } of sectionEls) el.hidden = state.editorOpen && !s.inEditor;
+  layers.refresh();
   if (d) {
     if (document.activeElement !== drawerQty) drawerQty.value = String(d.qty);
     const sig = `${d.id}|${d.sizeId}`;
@@ -135,21 +182,12 @@ subscribe((k) => {
       drawerQtyActions.replaceChildren(qtyActions(d));
     }
   }
-  undoBtn.disabled = false;
-  redoBtn.disabled = false;
 });
 // Cuando el Worker termina de procesar una imagen, redibujar.
 onProcessed(() => emit('design', 'list'));
 window.addEventListener('resize', () => emit('view'));
 
 /* ---------- Inicio ---------- */
-let saved = 'hoja';
-try {
-  saved = localStorage.getItem('pines-rebeca.tab') ?? 'hoja';
-} catch {
-  /* sin almacenamiento */
-}
-showTab(tabs.some((t) => t.id === saved) ? saved : 'hoja');
-emit('list', 'design', 'sizes', 'page');
+emit('list', 'design', 'sizes', 'page', 'view');
 // Volver a dibujar cuando terminen de cargar las fuentes incrustadas.
 loadFonts().then(() => emit('design', 'list', 'view'));

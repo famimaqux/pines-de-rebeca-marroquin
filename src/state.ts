@@ -10,7 +10,7 @@ import { DEFAULT_GUIDES, type GuideSettings } from './render/sheet';
  * viven en el almacén de imágenes y aquí solo van sus ids).
  */
 
-export type DragTarget = 'image' | 'bg' | 'sticker';
+export type DragTarget = 'image' | 'bg' | 'text' | 'sticker';
 export type BrushMode = 'off' | 'erase' | 'restore';
 
 /** Ajustes de acomodo (el tamaño del papel sale de `paper`). */
@@ -27,6 +27,8 @@ export interface AppState {
   /** zoom de la hoja: 0 = ajustar a la pantalla; si no, px por mm */
   zoom: number;
   showRuler: boolean;
+  /** "Ver pines terminados" en la hoja (solo vista) */
+  showFinished: boolean;
   /** panel lateral del editor abierto */
   editorOpen: boolean;
   sizes: PinSize[];
@@ -50,6 +52,7 @@ export const state: AppState = {
   sheet: 0,
   zoom: 0,
   showRuler: true,
+  showFinished: false,
   editorOpen: false,
   sizes: loadSizes(),
   designs: [],
@@ -108,6 +111,20 @@ export function setPaper(p: Partial<PaperSettings>): void {
   state.paper = { ...state.paper, ...p };
   savePaper(state.paper);
   emit('page');
+}
+
+/** Pines a los que afectan los controles de la barra: la selección o, si no hay, el pin actual. */
+export function editTargets(): Design[] {
+  if (state.selection.size) return state.designs.filter((d) => state.selection.has(d.id));
+  const c = current();
+  return c ? [c] : [];
+}
+
+/** Selecciona estos pines (el primero queda como pin actual). */
+export function selectOnly(ids: number[]): void {
+  state.selection = new Set(ids);
+  if (ids.length) state.selId = ids[0];
+  emit('list', 'design', 'view');
 }
 
 export const current = (): Design | null => state.designs.find((d) => d.id === state.selId) ?? null;

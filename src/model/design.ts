@@ -67,6 +67,8 @@ export interface Adjustments {
   sat: number;
   /** nitidez (unsharp mask) 0..1 */
   sharp: number;
+  /** "Mejorar colores" automático 0..1 (niveles, viveza y aclarado) */
+  auto: number;
 }
 
 export interface RingLayer {
@@ -109,6 +111,9 @@ export interface TextLayer {
   effectColor: string;
   /** cuánto se mete hacia el centro, mm */
   inset: number;
+  /** posición de todo el bloque de letras (se arrastra en el editor), mm */
+  ox: number;
+  oy: number;
 }
 
 export interface Sticker {
@@ -160,9 +165,9 @@ export const FONTS: readonly FontDef[] = [
 
 export const EMOJIS = ['⭐', '💖', '🌸', '🦋', '🌈', '✨', '🍓', '🐱', '🎀', '🔥', '⚡', '🌙', '☀️', '🍀', '🎵', '👑', '🌻', '🐾', '💫', '🍒', '🐶', '🌷', '💎', '🦄'];
 
-export const NEUTRAL_ADJUST: Adjustments = { bright: 1, contrast: 1, sat: 1, sharp: 0 };
+export const NEUTRAL_ADJUST: Adjustments = { bright: 1, contrast: 1, sat: 1, sharp: 0, auto: 0 };
 /** "Optimizar para Epson L8050". */
-export const EPSON_ADJUST: Adjustments = { bright: 1.04, contrast: 1.08, sat: 1.15, sharp: 0.35 };
+export const EPSON_ADJUST: Adjustments = { bright: 1.04, contrast: 1.08, sat: 1.15, sharp: 0.35, auto: 0 };
 
 let nextId = 1;
 let nextStickerId = 1;
@@ -208,6 +213,8 @@ export function newDesign(sizeId: string, imageId: string | null = null): Design
       effect: 'ninguno',
       effectColor: '#7a1b4a',
       inset: 1.5,
+      ox: 0,
+      oy: 0,
     },
     stickers: [],
   };

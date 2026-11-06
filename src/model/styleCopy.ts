@@ -41,6 +41,8 @@ export function copyTextStyle(src: Design, dst: Design, withText: boolean): void
     middleSize: Math.max(1.5, src.text.middleSize * k),
     middleY: src.text.middleY * k,
     inset: src.text.inset * k,
+    ox: (src.text.ox ?? 0) * k,
+    oy: (src.text.oy ?? 0) * k,
     ...(withText ? {} : keep),
   };
 }

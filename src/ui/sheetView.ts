@@ -9,7 +9,8 @@ import { openCustomSize } from './customSize';
 import { capacityFor, currentLayout, sheetCopies } from '../layout/current';
 import type { Placed } from '../layout/pack';
 import { drawSheet, type SheetContext } from '../render/sheet';
-import { traceSized } from '../render/drawPin';
+import { drawPin, traceSized } from '../render/drawPin';
+import { drawGloss } from '../render/guides';
 import { checkpoint, emit, setPaper, setSizes, sizeById, state, subscribe } from '../state';
 import { fmtNum, h } from './dom';
 import { addFiles } from './designsList';
@@ -83,7 +84,17 @@ export interface SheetViewHooks {
 
 const RULER_PX = 22;
 
-export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summary: HTMLElement } {
+export interface SheetViewParts {
+  /** hoja con su barra superior (zoom, Hoja 1 de N, ver terminados) */
+  el: HTMLElement;
+  summary: HTMLElement;
+  paperBox: HTMLElement;
+  imagesBox: HTMLElement;
+  sizeBox: HTMLElement;
+  layoutBox: HTMLElement;
+}
+
+export function createSheetView(hooks: SheetViewHooks): SheetViewParts {
   /* ---------- Papel ---------- */
   const paperSel = h('select', { id: 'paper', 'aria-label': 'Papel' }, ...PAPERS.map((p) => h('option', { value: p.id }, p.name)));
   const cw = h('input', { type: 'number', min: 5, max: 100, step: 0.1, class: 'num', 'aria-label': 'Ancho del papel en cm' });
@@ -175,12 +186,11 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
     emit('page');
   });
   const pageOpts = h(
-    'details',
-    { class: 'popover' },
-    h('summary', {}, '⚙ Márgenes'),
+    'div',
+    {},
     h(
       'div',
-      { class: 'popover-body' },
+      { class: 'side-fields' },
       h('div', { class: 'field' }, h('label', { for: 'pg-margin' }, 'Margen ', marginOut), margin),
       h('div', { class: 'field' }, h('label', { for: 'pg-gap' }, 'Separación ', gapOut), gap),
       h(
@@ -216,18 +226,38 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
     zoomOut,
     h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Acercar', onclick: () => zoomBy(1.2) }, '+'),
     h('button', { type: 'button', class: 'btn ghost small', onclick: () => ((state.zoom = 0), emit('view')) }, 'Ajustar a pantalla'),
-    h('label', { class: 'check', for: 'ruler-chk' }, rulerChk, ' Regla en cm'),
+    h('label', { class: 'check', for: 'ruler-chk' }, rulerChk, ' Regla'),
   );
+  const finishedChk = h('input', { type: 'checkbox', id: 'finished-all' });
+  finishedChk.addEventListener('change', () => {
+    state.showFinished = finishedChk.checked;
+    emit('view');
+  });
 
-  const toolbar = h(
+  const paperBox = h(
     'div',
-    { class: 'toolbar card' },
-    h('div', { class: 'tool-group' }, h('label', { for: 'paper' }, 'Papel'), paperSel, customBox, h('div', { class: 'segmented', role: 'group', 'aria-label': 'Orientación' }, ...orientBtns)),
-    h('div', { class: 'tool-group' }, file, addBtn),
-    h('div', { class: 'tool-group' }, h('label', { for: 'def-size' }, 'Tamaño de pin'), defSize, sample, sampleTxt, scopeChip),
-    h('div', { class: 'tool-group' }, h('label', { for: 'pg-algo' }, 'Acomodo'), algo, pageOpts),
-    h('div', { class: 'tool-group' }, zoomBox),
+    { class: 'side-fields' },
+    h('label', { for: 'paper' }, 'Papel'),
+    paperSel,
+    customBox,
+    h('div', { class: 'segmented', role: 'group', 'aria-label': 'Orientación' }, ...orientBtns),
   );
+  const imagesBox = h(
+    'div',
+    { class: 'side-fields' },
+    file,
+    addBtn,
+    h('p', { class: 'muted small' }, 'Puedes elegir muchas a la vez o arrastrarlas a la hoja. Cada imagen aparece como un pin y se acomoda sola.'),
+  );
+  const sizeBox = h(
+    'div',
+    { class: 'side-fields' },
+    h('label', { for: 'def-size' }, 'Tamaño de pin'),
+    defSize,
+    h('div', { class: 'row' }, sample, sampleTxt),
+    scopeChip,
+  );
+  const layoutBox = h('div', { class: 'side-fields' }, h('label', { for: 'pg-algo' }, 'Modo de acomodo'), algo, pageOpts);
 
   /* ---------- Aviso de impresora ---------- */
   const printerWarn = h('div', { class: 'warn banner', role: 'alert', hidden: true });
@@ -244,7 +274,15 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
     state.copies[state.sheet] = n;
     emit('page');
   });
-  const nav = h('div', { class: 'sheet-nav' }, prev, pageInfo, next, pageTag, h('label', { class: 'mini inline' }, h('span', {}, 'Repetir esta hoja ×'), rep));
+  const nav = h(
+    'div',
+    { class: 'sheet-nav' },
+    h('div', { class: 'row' }, prev, pageInfo, next),
+    zoomBox,
+    h('label', { class: 'check finished-chk', for: 'finished-all' }, finishedChk, ' 👁 Ver pines terminados'),
+    h('label', { class: 'mini inline' }, h('span', {}, 'Repetir esta hoja ×'), rep),
+    pageTag,
+  );
 
   /* ---------- Hoja ---------- */
   const canvas = h('canvas', { class: 'sheet-canvas', role: 'img', tabindex: 0 });
@@ -255,14 +293,16 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
     h('p', { class: 'big' }, 'Tu hoja está vacía'),
     h('p', { class: 'muted' }, 'Toca “📷 Agregar imágenes” o arrastra tus fotos aquí: cada imagen aparece como un pin y se acomoda sola.'),
   );
-  const stage = h('div', { class: 'sheet-stage' }, scroller, emptyMsg);
+  // Lupa: vista ampliada del pin terminado al pasar el mouse
+  const loupe = h('canvas', { class: 'loupe', 'aria-hidden': 'true', hidden: true });
+  const stage = h('div', { class: 'sheet-stage' }, scroller, emptyMsg, loupe);
 
   const summary = h('div', { class: 'summary-bar', role: 'status', 'aria-live': 'polite' });
   const summaryText$ = h('span', {});
   const editBtn = h('button', { type: 'button', class: 'btn small', onclick: () => hooks.openEditor() }, '✎ Editar pin');
   summary.append(summaryText$, editBtn);
 
-  const el = h('section', { class: 'sheet-view', 'aria-label': 'Hoja de pines' }, toolbar, printerWarn, nav, stage);
+  const el = h('section', { class: 'sheet-view', 'aria-label': 'Hoja de pines' }, nav, printerWarn, stage);
 
   /* ---------- Dibujo ---------- */
   let geo = { ppm: 1, ox: 0, oy: 0 };
@@ -270,11 +310,10 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
   function currentPpm(): number {
     const { w, h: hh } = paperSize(state.paper);
     if (state.zoom > 0) return state.zoom;
-    const pad = state.showRuler ? RULER_PX + 12 : 12;
-    const availW = Math.max(200, scroller.clientWidth - pad);
-    // Alto disponible bajo la hoja; como mínimo el 62 % de la ventana (si no, se ve muy chica).
-    const top = scroller.getBoundingClientRect().top + window.scrollY;
-    const availH = Math.max(window.innerHeight * 0.62, window.innerHeight - top - 70);
+    const pad = state.showRuler ? RULER_PX + 14 : 14;
+    // La hoja se ajusta al espacio disponible (ancho y alto del área de la hoja).
+    const availW = Math.max(160, stage.clientWidth - 20 - pad);
+    const availH = Math.max(200, stage.clientHeight - 20 - pad);
     return Math.max(0.6, Math.min(availW / w, availH / hh));
   }
 
@@ -311,6 +350,7 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
     gap.value = String(state.page.gap);
     gapOut.textContent = `${fmtNum(state.page.gap)} mm`;
     rulerChk.checked = state.showRuler;
+    finishedChk.checked = state.showFinished;
 
     // Aviso de impresora
     if (!fitsPrinter(state.paper)) {
@@ -374,7 +414,7 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
     ctx.translate(geo.ox, geo.oy);
     ctx.scale(ppm, ppm);
     const sc = sheetContext();
-    if (page) drawSheet(ctx, page, sc, { guides: true, marginBox: true, pageNumber: state.sheet + 1, pageCount: n });
+    if (page) drawSheet(ctx, page, sc, { guides: true, marginBox: !state.showFinished, finished: state.showFinished, pageNumber: state.sheet + 1, pageCount: n });
     else drawSheet(ctx, { items: [], shelves: [], fail: Infinity }, sc, { guides: false, marginBox: true });
     // Resaltar los pines del diseño seleccionado
     if (page && state.selection.size) {
@@ -488,6 +528,14 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
       return;
     }
     // Doble toque en el celular = abrir el editor
+    if (e.pointerType === 'mouse' && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+      // Ctrl/Mayús + clic: sumar o quitar de la selección
+      if (state.selection.has(it.designId)) state.selection.delete(it.designId);
+      else state.selection.add(it.designId);
+      state.selId = it.designId;
+      emit('list', 'design', 'view');
+      return;
+    }
     if (e.pointerType !== 'mouse' && lastTap.id === it.designId && now - lastTap.t < 400) {
       lastTap = { t: 0, id: -1 };
       hooks.openEditor();
@@ -558,5 +606,34 @@ export function createSheetView(hooks: SheetViewHooks): { el: HTMLElement; summa
   };
   subscribe(schedule);
   new ResizeObserver(schedule).observe(scroller);
-  return { el, summary };
+  /* ---------- Lupa del pin terminado ---------- */
+  canvas.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse' || !state.showFinished) return void (loupe.hidden = true);
+    const it = hit(e);
+    const d = it && state.designs.find((x) => x.id === it.designId);
+    const s = it && sizeById(it.sizeId);
+    if (!it || !d || !s) return void (loupe.hidden = true);
+    const px = 220;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    loupe.width = loupe.height = px * dpr;
+    loupe.style.width = loupe.style.height = `${px}px`;
+    const c = loupe.getContext('2d')!;
+    const k = (px * dpr) / (Math.max(s.faceW, s.faceH) * 1.08);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, loupe.width, loupe.height);
+    c.setTransform(k, 0, 0, k, (px * dpr) / 2, (px * dpr) / 2);
+    drawPin(c, d, s, imagesFor(d), { faceOnly: true });
+    drawGloss(c, s);
+    const r = stage.getBoundingClientRect();
+    let x = e.clientX - r.left + 18;
+    let y = e.clientY - r.top - px / 2;
+    if (x + px > r.width) x = e.clientX - r.left - px - 18;
+    y = Math.max(4, Math.min(r.height - px - 4, y));
+    loupe.style.left = `${x}px`;
+    loupe.style.top = `${y}px`;
+    loupe.hidden = false;
+  });
+  canvas.addEventListener('pointerleave', () => (loupe.hidden = true));
+
+  return { el, summary, paperBox, imagesBox, sizeBox, layoutBox };
 }

@@ -17,6 +17,8 @@ export interface ProcessParams {
   contrast: number;
   sat: number;
   sharp: number;
+  /** "Mejorar colores" automático 0..1 */
+  auto: number;
 }
 
 /**
@@ -163,21 +165,100 @@ export function applyMask(img: Pixels, original: Uint8ClampedArray, mask: Uint8C
   }
 }
 
-/** Cadena completa: quitar fondo → máscara del pincel → color → nitidez. */
+/**
+ * "Mejorar colores" automático, pensado para fotos opacas u oscuras:
+ * 1) estira los niveles de cada canal (el 0,5 % más oscuro pasa a negro y el
+ *    0,5 % más claro a blanco), lo que también quita dominantes de color;
+ * 2) aclara los medios tonos (gamma) si la foto es oscura;
+ * 3) aviva los colores apagados más que los que ya son vivos ("viveza").
+ * `amount` 0..1 mezcla el resultado con el original.
+ */
+export function autoEnhance(img: Pixels, amount: number): void {
+  if (amount <= 0) return;
+  const p = img.data;
+  const n = p.length / 4;
+  const hist = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
+  let lumSum = 0;
+  let counted = 0;
+  for (let i = 0; i < p.length; i += 4) {
+    if (p[i + 3] < 16) continue; // ignora lo transparente (fondo quitado)
+    hist[0][p[i]]++;
+    hist[1][p[i + 1]]++;
+    hist[2][p[i + 2]]++;
+    lumSum += 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2];
+    counted++;
+  }
+  if (!counted) return;
+  const clip = Math.max(1, Math.round(counted * 0.005));
+  // Un mismo estiramiento para los tres canales: así el tono (rosa, azul…) no cambia.
+  let L = 255;
+  let Hh = 0;
+  for (let c = 0; c < 3; c++) {
+    let acc = 0;
+    let l = 0;
+    while (l < 255 && acc + hist[c][l] <= clip) acc += hist[c][l++];
+    acc = 0;
+    let h = 255;
+    while (h > 0 && acc + hist[c][h] <= clip) acc += hist[c][h--];
+    L = Math.min(L, l);
+    Hh = Math.max(Hh, h);
+  }
+  // Como máximo se estira ×2 (para no exagerar en fotos casi planas).
+  const MIN_RANGE = 255 / 2;
+  if (Hh - L < MIN_RANGE) {
+    const mid = (Hh + L) / 2;
+    L = Math.max(0, mid - MIN_RANGE / 2);
+    Hh = Math.min(255, L + MIN_RANGE);
+  }
+  const lo = [L, L, L];
+  const hi = [Hh, Hh, Hh];
+  // Gamma: si el promedio queda oscuro, aclarar los medios tonos.
+  const mean = lumSum / counted / 255;
+  const gamma = mean < 0.5 ? Math.max(0.7, 0.5 + mean * 0.9) : 1;
+  const lut = [0, 1, 2].map((c) => {
+    const t = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) {
+      const x = Math.min(1, Math.max(0, (v - lo[c]) / Math.max(1, hi[c] - lo[c])));
+      t[v] = Math.pow(x, gamma) * 255;
+    }
+    return t;
+  });
+  const vib = 0.45; // viveza
+  for (let i = 0; i < n * 4; i += 4) {
+    if (p[i + 3] === 0) continue;
+    let r = lut[0][p[i]];
+    let g = lut[1][p[i + 1]];
+    let b = lut[2][p[i + 2]];
+    const mx = Math.max(r, g, b);
+    const mn = Math.min(r, g, b);
+    const satNow = mx ? (mx - mn) / mx : 0;
+    const k = 1 + vib * (1 - satNow);
+    const l = 0.299 * r + 0.587 * g + 0.114 * b;
+    r = l + (r - l) * k;
+    g = l + (g - l) * k;
+    b = l + (b - l) * k;
+    p[i] = p[i] + (r - p[i]) * amount;
+    p[i + 1] = p[i + 1] + (g - p[i + 1]) * amount;
+    p[i + 2] = p[i + 2] + (b - p[i + 2]) * amount;
+  }
+}
+
+/** Cadena completa: quitar fondo → máscara del pincel → mejorar colores → nitidez → color. */
 export function processPixels(img: Pixels, params: ProcessParams, mask: Uint8ClampedArray | null): void {
   const original = mask ? new Uint8ClampedArray(img.data) : null;
   if (params.quick) removeBackground(img, params.tol, params.soft);
   if (mask && original) applyMask(img, original, mask);
+  autoEnhance(img, params.auto ?? 0);
   unsharp(img, params.sharp);
   adjustColor(img, params.bright, params.contrast, params.sat);
 }
 
 export function paramsKey(p: ProcessParams, maskId: string | null): string {
-  return [p.quick ? 1 : 0, p.tol, p.soft, p.bright, p.contrast, p.sat, p.sharp, maskId ?? ''].join('|');
+  return [p.quick ? 1 : 0, p.tol, p.soft, p.bright, p.contrast, p.sat, p.sharp, p.auto ?? 0, maskId ?? ''].join('|');
 }
 
 export function isIdentity(p: ProcessParams, maskId: string | null): boolean {
-  return !p.quick && !maskId && p.bright === 1 && p.contrast === 1 && p.sat === 1 && p.sharp === 0;
+  return !p.quick && !maskId && p.bright === 1 && p.contrast === 1 && p.sat === 1 && p.sharp === 0 && !(p.auto > 0);
 }
 
 /** Tamaño máximo (px) de la imagen procesada: sobra para 88 mm a 300 ppp. */

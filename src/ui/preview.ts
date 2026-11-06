@@ -23,7 +23,9 @@ export interface PreviewGeometry {
 /** Dibuja la vista previa del pin en un canvas que se adapta al ancho disponible. */
 export function renderPreview(canvas: HTMLCanvasElement, d: Design, size: PinSize, imgs: PinImages, opts: PreviewOptions): PreviewGeometry {
   const dpr = Math.min(3, window.devicePixelRatio || 1);
-  const cssW = Math.max(220, Math.min(480, canvas.parentElement?.clientWidth ?? 360));
+  // El ancho sale de la tarjeta del editor (no del propio contenedor del lienzo, que crece con él).
+  const host = (canvas.closest('.preview') as HTMLElement | null) ?? canvas.parentElement;
+  const cssW = Math.max(200, Math.min(480, (host?.clientWidth ?? 380) - 34));
   const maxDim = Math.max(size.cutW, size.cutH);
   const ppm = (cssW - 2 * SIDE_SPACE) / maxDim;
   const cssH = size.cutH * ppm + 2 * LABEL_SPACE;

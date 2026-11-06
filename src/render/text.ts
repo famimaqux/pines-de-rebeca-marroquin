@@ -189,6 +189,7 @@ export function drawTexts(ctx: Ctx, d: Design, size: PinSize): void {
   const t = d.text;
   if (!t.top && !t.bottom && !t.middle) return;
   ctx.save();
+  ctx.translate(t.ox ?? 0, t.oy ?? 0);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 

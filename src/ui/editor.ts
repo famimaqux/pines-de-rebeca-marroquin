@@ -28,6 +28,7 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
   const targets: [DragTarget, string][] = [
     ['image', 'Imagen'],
     ['bg', 'Fondo'],
+    ['text', 'Letras'],
     ['sticker', 'Sticker'],
   ];
   const targetBtns = targets.map(([t, label]) =>
@@ -42,7 +43,8 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
           state.brush.mode = 'off';
           const d = current();
           if (t === 'bg' && d && d.bg.type === 'ninguno' && !d.bg.imageId && d.pattern.type === 'ninguno') toast('Este pin aún no tiene fondo: elige un tipo de fondo, un patrón o una imagen de fondo');
-          if (t === 'sticker' && d && !d.stickers.length) toast('Este pin no tiene stickers: agrégalos en “7 · Stickers”');
+          if (t === 'sticker' && d && !d.stickers.length) toast('Este pin no tiene stickers: agrégalos en “Stickers”');
+          if (t === 'text' && d && !d.text.top && !d.text.bottom && !d.text.middle) toast('Este pin no tiene letras: escríbelas en “Letras”');
           emit('view');
         },
       },
@@ -264,6 +266,19 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
 
   const layerOf = (d: Design, t: DragTarget, stickerId?: number) => {
     if (t === 'bg') return { get: () => ({ ox: d.bg.ox, oy: d.bg.oy, zoom: d.bg.zoom, rot: d.bg.rot }), set: (v: { ox: number; oy: number; zoom: number; rot: number }) => Object.assign(d.bg, v) };
+    if (t === 'text') {
+      // "zoom" = tamaño del texto del centro; los de arriba/abajo crecen en proporción.
+      return {
+        get: () => ({ ox: d.text.ox ?? 0, oy: d.text.oy ?? 0, zoom: d.text.middleSize, rot: 0 }),
+        set: (v: { ox: number; oy: number; zoom: number; rot: number }) => {
+          const k = v.zoom / (d.text.middleSize || 1);
+          d.text.ox = v.ox;
+          d.text.oy = v.oy;
+          d.text.middleSize = v.zoom;
+          d.text.size = Math.max(1, d.text.size * k);
+        },
+      };
+    }
     if (t === 'sticker') {
       const st = d.stickers.find((s) => s.id === stickerId);
       if (!st) return null;
@@ -289,7 +304,8 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
   };
   let lastSticker: number | undefined;
 
-  const clampZoom = (t: DragTarget, z: number) => (t === 'sticker' ? Math.min(45, Math.max(2, z)) : Math.min(t === 'bg' ? 4 : 5, Math.max(0.2, z)));
+  const clampZoom = (t: DragTarget, z: number) =>
+    t === 'sticker' || t === 'text' ? Math.min(45, Math.max(2, z)) : Math.min(t === 'bg' ? 4 : 5, Math.max(0.2, z));
 
   function beginGesture(d: Design) {
     const pts = [...pointers.values()];

@@ -2,6 +2,7 @@ import type { Design } from '../model/design';
 import type { PinSize } from '../model/sizes';
 import type { Page } from '../layout/pack';
 import { drawPin, traceSized, type PinImages } from './drawPin';
+import { drawGloss } from './guides';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -81,6 +82,8 @@ export interface RenderSheetOptions {
   guides: boolean;
   /** recuadro del margen (solo en pantalla) */
   marginBox?: boolean;
+  /** "Ver pines terminados": solo la cara visible con brillo (solo en pantalla, nunca al imprimir) */
+  finished?: boolean;
   pageNumber?: number;
   pageCount?: number;
 }
@@ -103,12 +106,17 @@ export function drawSheet(ctx: Ctx, page: Page, sc: SheetContext, o: RenderSheet
     if (!d || !s) continue;
     ctx.save();
     ctx.translate(it.x, it.y);
-    drawPin(ctx, d, s, sc.images(d));
-    if (o.guides && sc.guides.cut) drawCutLine(ctx, s, sc.guides);
-    if (o.guides && sc.guides.center) drawCenterMark(ctx);
+    if (o.finished) {
+      drawPin(ctx, d, s, sc.images(d), { faceOnly: true });
+      drawGloss(ctx, s);
+    } else {
+      drawPin(ctx, d, s, sc.images(d));
+      if (o.guides && sc.guides.cut) drawCutLine(ctx, s, sc.guides);
+      if (o.guides && sc.guides.center) drawCenterMark(ctx);
+    }
     ctx.restore();
   }
-  if (o.guides && sc.guides.ruler) drawRuler(ctx, sc.paperH, sc.margin, rulerLabel(o.pageNumber, o.pageCount));
+  if (o.guides && !o.finished && sc.guides.ruler) drawRuler(ctx, sc.paperH, sc.margin, rulerLabel(o.pageNumber, o.pageCount));
 }
 
 export function rulerLabel(n?: number, total?: number): string {
