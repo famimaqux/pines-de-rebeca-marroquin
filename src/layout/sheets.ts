@@ -1,10 +1,11 @@
 import type { Design } from '../model/design';
 import { packRadius, type PinSize } from '../model/sizes';
-import { bestCapacity, centerPages, countFit, pack, type PackItem, type PackResult, type Page, type PageSettings } from './pack';
+import { bestCapacity, countFit, type PackItem, type Page, type PageSettings } from './pack';
+import { arrange, type ArrangeMode, type ArrangeResult, type Fixed } from './arrange';
 
 export const MAX_QTY = 999;
 
-export function probeFor(s: PinSize): Omit<PackItem, 'order' | 'designId'> {
+export function probeFor(s: PinSize): Omit<PackItem, 'order' | 'designId' | 'key'> {
   return { sizeId: s.id, w: s.cutW, h: s.cutH, r: packRadius(s) };
 }
 
@@ -14,24 +15,36 @@ export function buildItems(designs: Design[], sizes: PinSize[]): PackItem[] {
     const s = sizes.find((x) => x.id === d.sizeId);
     if (!s) return;
     const n = Math.max(0, Math.min(MAX_QTY, Math.floor(d.qty)));
-    for (let k = 0; k < n; k++) items.push({ ...probeFor(s), designId: d.id, order });
+    for (let k = 0; k < n; k++) items.push({ ...probeFor(s), designId: d.id, order, key: pinKey(d.id, k) });
   });
   return items;
 }
 
-export interface Layout extends PackResult {
+/** Identidad de cada pin: diseño + número de copia. */
+export const pinKey = (designId: number, copy: number) => `${designId}:${copy}`;
+export function parseKey(key: string): { designId: number; copy: number } {
+  const [a, b] = key.split(':');
+  return { designId: Number(a), copy: Number(b) };
+}
+
+export interface Layout extends ArrangeResult {
   total: number;
   /** cuántos más de cada molde caben en la última hoja */
   free: Record<string, number>;
 }
 
-export function computeLayout(designs: Design[], sizes: PinSize[], settings: PageSettings): Layout {
+export function computeLayout(
+  designs: Design[],
+  sizes: PinSize[],
+  settings: PageSettings,
+  fixed: ReadonlyMap<string, Fixed> = new Map(),
+  mode: ArrangeMode = settings.algo === 'grid' ? 'grid' : settings.algo === 'free' ? 'free' : 'auto',
+): Layout {
   const items = buildItems(designs, sizes);
-  const res = pack(items, settings);
+  const res = arrange(items, fixed, settings, mode);
   const free: Record<string, number> = {};
   const last = res.pages[res.pages.length - 1];
   if (last) for (const s of sizes) free[s.id] = countFit(last, probeFor(s), res.algo, settings, 300);
-  centerPages(res.pages, settings);
   return { ...res, total: items.length, free };
 }
 

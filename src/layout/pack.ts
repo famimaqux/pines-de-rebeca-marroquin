@@ -10,7 +10,8 @@
 
 export const A4 = { w: 210, h: 297 } as const;
 
-export type PackAlgo = 'auto' | 'grid' | 'hex';
+/** 'free' = modo Libre (nada se reacomoda solo); para calcular capacidades cuenta como automático. */
+export type PackAlgo = 'auto' | 'grid' | 'hex' | 'free';
 
 export interface PageSettings {
   /** tamaño del papel (ya con la orientación aplicada), mm */
@@ -22,6 +23,8 @@ export interface PageSettings {
 }
 
 export interface PackItem {
+  /** identidad del pin: "idDiseño:copia" */
+  key: string;
   /** id del diseño */
   designId: number;
   sizeId: string;
@@ -47,6 +50,8 @@ interface Shelf {
 
 export interface Page {
   items: Placed[];
+  /** pines fijados (📌 o en modo Libre): obstáculos que el acomodo esquiva */
+  fixed: Placed[];
   shelves: Shelf[];
   /** radio más chico que ya no cupo (para no volver a intentar) */
   fail: number;
@@ -59,7 +64,7 @@ export interface PackResult {
 }
 
 const E = 1e-6;
-export const newPage = (): Page => ({ items: [], shelves: [], fail: Infinity });
+export const newPage = (): Page => ({ items: [], fixed: [], shelves: [], fail: Infinity });
 
 function usable(s: PageSettings) {
   return { x0: s.margin, y0: s.margin, x1: s.w - s.margin, y1: s.h - s.margin };
@@ -128,27 +133,56 @@ function hexPos(page: Page, r: number, s: PageSettings): [number, number] | null
   return best;
 }
 
-/** Cuadrícula por estantes: cada pieza w×h va en la primera fila donde quepa. */
+/** ¿Un rectángulo w×h centrado en (cx, cy) choca con algún pin fijado? Devuelve el que estorba. */
+function blockedBy(page: Page, cx: number, cy: number, w: number, h: number, g: number): Placed | null {
+  for (const o of page.fixed) {
+    const nx = Math.max(cx - w / 2, Math.min(o.x, cx + w / 2));
+    const ny = Math.max(cy - h / 2, Math.min(o.y, cy + h / 2));
+    if (Math.hypot(o.x - nx, o.y - ny) < o.r + g - 1e-4) return o;
+  }
+  return null;
+}
+
+/**
+ * Cuadrícula por estantes: cada pieza w×h va en la primera fila donde quepa.
+ * Si hay pines fijados, se salta el tramo que ocupan y sigue a su derecha.
+ */
 function gridPos(page: Page, w: number, h: number, s: PageSettings): { x: number; y: number; commit: () => void } | null {
   const U = usable(s);
   const g = s.gap;
   for (const sh of page.shelves) {
-    if (h <= sh.h + E && sh.x + w <= U.x1 + E) {
-      return { x: sh.x + w / 2, y: sh.y + sh.h / 2, commit: () => void (sh.x += w + g) };
+    if (h > sh.h + E) continue;
+    let x = sh.x;
+    const cy = sh.y + sh.h / 2;
+    while (x + w <= U.x1 + E) {
+      const b = blockedBy(page, x + w / 2, cy, w, h, g);
+      if (!b) {
+        const at = x;
+        return { x: at + w / 2, y: cy, commit: () => void (sh.x = at + w + g) };
+      }
+      x = Math.max(x + 0.5, b.x + b.r + g);
     }
   }
   const last = page.shelves[page.shelves.length - 1];
-  const y = last ? last.y + last.h + g : U.y0;
-  if (y + h > U.y1 + E || U.x0 + w > U.x1 + E) return null;
-  const sh: Shelf = { y, h, x: U.x0 };
-  return {
-    x: U.x0 + w / 2,
-    y: y + h / 2,
-    commit: () => {
-      page.shelves.push(sh);
-      sh.x += w + g;
-    },
-  };
+  let y = last ? last.y + last.h + g : U.y0;
+  while (y + h <= U.y1 + E) {
+    let x = U.x0;
+    while (x + w <= U.x1 + E) {
+      const b = blockedBy(page, x + w / 2, y + h / 2, w, h, g);
+      if (!b) {
+        const at = x;
+        const yy = y;
+        return {
+          x: at + w / 2,
+          y: yy + h / 2,
+          commit: () => void page.shelves.push({ y: yy, h, x: at + w + g }),
+        };
+      }
+      x = Math.max(x + 0.5, b.x + b.r + g);
+    }
+    y += 1; // la fila está tapada por pines fijados: probar un poco más abajo
+  }
+  return null;
 }
 
 export function place(page: Page, it: PackItem, algo: 'grid' | 'hex', s: PageSettings): boolean {
@@ -177,8 +211,9 @@ export function sortItems(items: PackItem[]): PackItem[] {
   return items.slice().sort((a, b) => b.r - a.r || b.w * b.h - a.w * a.h || a.order - b.order);
 }
 
-export function packWith(items: PackItem[], algo: 'grid' | 'hex', s: PageSettings): PackResult {
-  const pages: Page[] = [];
+/** Acomoda `items`; `start` son hojas que ya traen pines fijados (se respetan). */
+export function packWith(items: PackItem[], algo: 'grid' | 'hex', s: PageSettings, start: Page[] = []): PackResult {
+  const pages: Page[] = start.map(clonePage);
   const unfit: PackItem[] = [];
   for (const it of sortItems(items)) {
     let ok = false;
@@ -201,6 +236,8 @@ export function centerPages(pages: Page[], s: PageSettings): void {
   const U = usable(s);
   for (const p of pages) {
     if (!p.items.length) continue;
+    // Las hojas con pines fijados no se mueven (si no, los fijados se correrían).
+    if (p.fixed.length) continue;
     let l = Infinity;
     let r = -Infinity;
     for (const i of p.items) {
@@ -215,7 +252,7 @@ export function centerPages(pages: Page[], s: PageSettings): void {
 
 export function pack(items: PackItem[], s: PageSettings): PackResult {
   let res: PackResult;
-  if (s.algo === 'auto') {
+  if (s.algo === 'auto' || s.algo === 'free') {
     const G = packWith(items, 'grid', s);
     const H = packWith(items, 'hex', s);
     res = H.pages.length < G.pages.length || (H.pages.length === G.pages.length && H.unfit.length < G.unfit.length) ? H : G;
@@ -223,22 +260,24 @@ export function pack(items: PackItem[], s: PageSettings): PackResult {
   return res;
 }
 
-function clonePage(p: Page): Page {
-  return { items: p.items.map((i) => ({ ...i })), shelves: p.shelves.map((s) => ({ ...s })), fail: Infinity };
+export function clonePage(p: Page): Page {
+  const items = p.items.map((i) => ({ ...i }));
+  const fixedKeys = new Set(p.fixed.map((f) => f.key));
+  return { items, fixed: items.filter((i) => fixedKeys.has(i.key)), shelves: p.shelves.map((s) => ({ ...s })), fail: Infinity };
 }
 
 /** Cuántas piezas de un tamaño más caben en una hoja (vacía o ya empezada). */
-export function countFit(page: Page, probe: Omit<PackItem, 'order' | 'designId'>, algo: 'grid' | 'hex', s: PageSettings, cap = 500): number {
+export function countFit(page: Page, probe: Omit<PackItem, 'order' | 'designId' | 'key'>, algo: 'grid' | 'hex', s: PageSettings, cap = 500): number {
   const pg = clonePage(page);
   let n = 0;
-  while (n < cap && place(pg, { ...probe, designId: -1, order: 0 }, algo, s)) n++;
+  while (n < cap && place(pg, { ...probe, designId: -1, order: 0, key: `probe:${n}` }, algo, s)) n++;
   return n;
 }
 
 const capCache = new Map<string, number>();
 
 /** Capacidad máxima de una hoja vacía para un molde. */
-export function capacity(probe: Omit<PackItem, 'order' | 'designId'>, algo: 'grid' | 'hex', s: PageSettings): number {
+export function capacity(probe: Omit<PackItem, 'order' | 'designId' | 'key'>, algo: 'grid' | 'hex', s: PageSettings): number {
   const k = [probe.w, probe.h, probe.r, s.w, s.h, s.margin, s.gap, algo].join('|');
   let v = capCache.get(k);
   if (v === undefined) {
@@ -248,6 +287,6 @@ export function capacity(probe: Omit<PackItem, 'order' | 'designId'>, algo: 'gri
   return v;
 }
 
-export function bestCapacity(probe: Omit<PackItem, 'order' | 'designId'>, s: PageSettings): number {
-  return s.algo === 'auto' ? Math.max(capacity(probe, 'grid', s), capacity(probe, 'hex', s)) : capacity(probe, s.algo, s);
+export function bestCapacity(probe: Omit<PackItem, 'order' | 'designId' | 'key'>, s: PageSettings): number {
+  return s.algo === 'grid' || s.algo === 'hex' ? capacity(probe, s.algo, s) : Math.max(capacity(probe, 'grid', s), capacity(probe, 'hex', s));
 }

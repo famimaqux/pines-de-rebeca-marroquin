@@ -22,14 +22,14 @@ export function drawEditorGuides(ctx: Ctx, size: PinSize, pxPerMm: number): void
   ctx.beginPath();
   traceSized(ctx, size, size.cutW, size.cutH);
   traceSized(ctx, size, size.faceW, size.faceH);
-  ctx.fillStyle = 'rgba(60, 20, 40, 0.28)';
+  ctx.fillStyle = 'rgba(30, 27, 75, 0.28)';
   ctx.fill('evenodd');
 
   // Corte (continuo)
   ctx.beginPath();
   traceSized(ctx, size, size.cutW, size.cutH);
   ctx.lineWidth = 1.5 * px;
-  ctx.strokeStyle = '#c2306f';
+  ctx.strokeStyle = '#7C3AED';
   ctx.stroke();
 
   // Cara visible (punteado)
@@ -57,7 +57,7 @@ export function drawEditorGuides(ctx: Ctx, size: PinSize, pxPerMm: number): void
     ctx.fillStyle = color;
     ctx.fillText(text, 0, y);
   };
-  label(`✂ corte ${sizeLabel(size.cutW, size.cutH, size.shape)}`, -size.cutH / 2 - 4 * px, '#c2306f', 'bottom');
+  label(`✂ corte ${sizeLabel(size.cutW, size.cutH, size.shape)}`, -size.cutH / 2 - 4 * px, '#7C3AED', 'bottom');
   label(`cara visible ${sizeLabel(size.faceW, size.faceH, size.shape)}`, size.cutH / 2 + 4 * px, '#3a2230', 'top');
   ctx.restore();
 }

@@ -81,6 +81,8 @@ function setPath(obj: unknown, path: string, v: unknown): void {
 }
 
 export interface LayersPanelHooks {
+  /** prefijo de los ids de las secciones (para tener dos copias del panel) */
+  idPrefix?: string;
   /** Bloque extra en "Quitar fondo" (IA), lo agrega la etapa de IA. */
   aiBlock?: () => { el: HTMLElement; refresh: () => void };
 }
@@ -648,12 +650,12 @@ export function createLayersPanel(hooks: LayersPanelHooks = {}): LayersPanel {
 
   const parts: Record<string, HTMLElement> = {};
   for (const sec of SECTIONS) {
-    const body = h('div', { class: 'fields', id: `sec-${sec.id}` }, ...sec.controls.map(field));
+    const body = h('div', { class: 'fields', id: `${hooks.idPrefix ?? ''}sec-${sec.id}` }, ...sec.controls.map(field));
     parts[sec.id] = body;
     el.append(h('details', { open: !!sec.open }, h('summary', {}, sec.title), body));
   }
   const stickersApply = field(applyToOthers('los stickers', (s, z) => copyStickers(s, z)));
-  parts.stickers = h('div', { class: 'fields', id: 'sec-stickers' }, stickerList, addSticker, stickersApply);
+  parts.stickers = h('div', { class: 'fields', id: `${hooks.idPrefix ?? ''}sec-stickers` }, stickerList, addSticker, stickersApply);
   el.append(h('details', {}, h('summary', {}, '7 · Stickers'), parts.stickers));
 
   return {

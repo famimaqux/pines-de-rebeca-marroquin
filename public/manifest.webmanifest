@@ -5,8 +5,8 @@
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#fff5fa",
-  "theme_color": "#e85d9a",
+  "background_color": "#F5F3FF",
+  "theme_color": "#5B21B6",
   "lang": "es",
   "icons": [
     { "src": "pin.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }

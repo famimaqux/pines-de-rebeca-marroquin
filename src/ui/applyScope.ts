@@ -83,8 +83,9 @@ function applyDirect(req: ApplyRequest, scope: Scope): number {
   const ids = targetIds(scope, context(new Set()));
   if (!ids.length) return 0;
   const before = JSON.stringify(state.designs);
+  const fixedBefore = JSON.stringify([...state.fixed]);
   runOn(ids, req, req.extra?.checked ?? false);
-  checkpointFrom(before, state.selId);
+  checkpointFrom(before, state.selId, fixedBefore);
   emit('list', 'design');
   toast(`${req.title}: aplicado a ${SCOPE_LABELS[scope].toLowerCase()} (${pinsOf(ids)} pin(es)). Ctrl+Z para deshacer.`);
   return ids.length;
@@ -100,6 +101,8 @@ export function applyWithScope(req: ApplyRequest): Promise<number> {
 
   return new Promise<number>((resolve) => {
     const snapshot = JSON.stringify(state.designs);
+    // Las posiciones fijas también se guardan: la vista previa puede reubicar pines que ya no caben.
+    const fixedSnap = JSON.stringify([...state.fixed]);
     // La hoja y la selección se toman al abrir: la vista previa puede reacomodar los pines.
     const frozen = ctx0;
     const ctxNow = (custom: ReadonlySet<number>): ScopeContext => ({ ...frozen, customIds: custom });
@@ -195,7 +198,7 @@ export function applyWithScope(req: ApplyRequest): Promise<number> {
     const close = (applied: boolean) => {
       if (applied) {
         const ids = targetIds(scope, ctxNow(customIds));
-        checkpointFrom(snapshot, selBefore);
+        checkpointFrom(snapshot, selBefore, fixedSnap);
         lastScope = scope;
         if (dontAskChk.checked && scope !== 'custom') dontAsk = true;
         savePrefs();
@@ -203,7 +206,8 @@ export function applyWithScope(req: ApplyRequest): Promise<number> {
         resolve(ids.length);
       } else {
         state.designs = JSON.parse(snapshot) as Design[];
-        emit('list', 'design');
+        state.fixed = new Map(JSON.parse(fixedSnap));
+        emit('list', 'design', 'page');
         resolve(0);
       }
       dlg.close();

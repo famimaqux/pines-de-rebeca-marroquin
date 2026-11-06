@@ -7,6 +7,7 @@ import { effectivePpi } from '../render/drawPin';
 import { getImage } from '../image/store';
 import { canRedo, canUndo, checkpoint, current, emit, redo, sizeById, state, subscribe, undo, type BrushMode, type DragTarget } from '../state';
 import { brushTo, commitBrush, drawBrushOverlay } from './brush';
+import { applyWand, clearWand, drawWandOverlay, hasSelection, onWandChanged, recompute, wand, wandClick } from './wand';
 import { fmtNum, h } from './dom';
 import { renderPreview, type PreviewGeometry } from './preview';
 import { imagesFor } from './resources';
@@ -15,7 +16,13 @@ import { toast } from './toast';
 /** Ppp mínimos para que la foto no salga borrosa. */
 export const MIN_PPI = 200;
 
-export function createEditor(): { el: HTMLElement; redraw: () => void } {
+export interface EditorTab {
+  id: 'image' | 'bg' | 'text' | 'sticker';
+  label: string;
+  content: HTMLElement[];
+}
+
+export function createEditor(tabsIn: EditorTab[] = []): { el: HTMLElement; redraw: () => void } {
   const canvas = h('canvas', { class: 'pin-canvas', role: 'img', 'aria-label': 'Vista previa del pin. Arrastra para mover, rueda o pellizca para hacer zoom.', tabindex: 0 });
   const title = h('h2', { id: 'editor-title' }, 'Editor');
   const sizeSelect = h('select', { id: 'ed-size', 'aria-label': 'Molde de este diseño' });
@@ -57,6 +64,7 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
     ['off', 'Apagado'],
     ['erase', '🧽 Borrar'],
     ['restore', '🖌 Restaurar'],
+    ['wand', '🪄 Varita'],
   ];
   const brushBtns = brushes.map(([m, label]) =>
     h(
@@ -82,7 +90,80 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
     brushOut.textContent = `${fmtNum(state.brush.size)} mm`;
   });
   brushOut.textContent = `${fmtNum(state.brush.size)} mm`;
-  const brushRow = h('div', { class: 'row wrap brush-row' }, h('span', { class: 'label' }, 'Pincel:'), h('div', { class: 'segmented' }, ...brushBtns), h('label', { class: 'mini inline' }, h('span', {}, 'Tamaño'), brushSize, brushOut));
+  const brushSizeBox = h('label', { class: 'mini inline' }, h('span', {}, 'Tamaño'), brushSize, brushOut);
+  const brushRow = h('div', { class: 'row wrap brush-row' }, h('span', { class: 'label' }, 'Quitar fondo a mano:'), h('div', { class: 'segmented' }, ...brushBtns), brushSizeBox);
+
+  // ---- Varita mágica ----
+  const tol = h('input', { type: 'range', min: 1, max: 160, step: 1, value: String(wand.opts.tol), 'aria-label': 'Tolerancia de la varita' });
+  const tolOut = h('output', {}, String(wand.opts.tol));
+  const soft = h('input', { type: 'range', min: 0, max: 12, step: 1, value: String(wand.opts.soft), 'aria-label': 'Suavizado del borde de la selección' });
+  const softOut = h('output', {}, `${wand.opts.soft} px`);
+  const contiguous = h('input', { type: 'checkbox', checked: wand.opts.contiguous });
+  const live = () => {
+    const d = current();
+    if (d) void recompute(d);
+  };
+  tol.addEventListener('input', () => {
+    wand.opts.tol = Number(tol.value);
+    tolOut.textContent = tol.value;
+    live();
+  });
+  soft.addEventListener('input', () => {
+    wand.opts.soft = Number(soft.value);
+    softOut.textContent = `${soft.value} px`;
+    live();
+  });
+  contiguous.addEventListener('change', () => {
+    wand.opts.contiguous = contiguous.checked;
+    live();
+  });
+  const opBtns = (['new', 'add', 'sub'] as const).map((op) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'seg',
+        'aria-pressed': String(wand.op === op),
+        onclick: () => {
+          wand.op = op;
+          opBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(['new', 'add', 'sub'][i] === op)));
+        },
+      },
+      op === 'new' ? 'Nueva' : op === 'add' ? '＋ Sumar' : '－ Restar',
+    ),
+  );
+  const wandAction = (label: string, title: string, fn: () => void | Promise<void>) => h('button', { type: 'button', class: 'btn ghost small', title, onclick: () => void fn() }, label);
+  const applySel = async (action: 'erase' | 'restore') => {
+    const d = current();
+    if (!d || !hasSelection()) return toast('Primero haz clic sobre la imagen con la varita');
+    const id = await applyWand(d, action);
+    if (!id) return;
+    checkpoint();
+    d.cutout.maskId = id;
+    emit('design', 'list');
+    toast(action === 'erase' ? 'Selección borrada (Ctrl+Z para deshacer)' : 'Selección restaurada');
+  };
+  const wandBox = h(
+    'div',
+    { class: 'wand-box', hidden: true },
+    h('p', { class: 'muted small' }, '🪄 Haz clic sobre la imagen para seleccionar la zona de color parecido. Mayús + clic suma otra zona, Alt + clic resta.'),
+    h('div', { class: 'segmented', role: 'group', 'aria-label': 'Modo de la varita' }, ...opBtns),
+    h('label', { class: 'mini' }, h('span', {}, 'Tolerancia ', tolOut), tol),
+    h('label', { class: 'check small' }, contiguous, ' Solo zona continua (si no: todo ese color en la imagen)'),
+    h('label', { class: 'mini' }, h('span', {}, 'Suavizado del borde ', softOut), soft),
+    h(
+      'div',
+      { class: 'row wrap' },
+      wandAction('🧽 Borrar selección', 'La zona elegida se vuelve transparente', () => applySel('erase')),
+      wandAction('🖌 Restaurar selección', 'La zona elegida vuelve a verse', () => applySel('restore')),
+      wandAction('🔄 Invertir', 'Útil para quedarse solo con la figura', () => {
+        if (!wand.seeds.length) return toast('Primero selecciona una zona');
+        wand.opts.invert = !wand.opts.invert;
+        live();
+      }),
+      wandAction('✕ Quitar selección', 'Deja de seleccionar', () => clearWand()),
+    ),
+  );
 
   // ---- Botones ----
   const undoBtn = h('button', { type: 'button', class: 'btn ghost small', title: 'Deshacer (Ctrl+Z)', onclick: () => undo() || toast('Nada que deshacer') }, '↶ Deshacer');
@@ -167,16 +248,61 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
   );
   const batchBtn = h('button', { type: 'button', class: 'btn ghost small', onclick: () => openBatch() }, '🏷 Nombres en lote');
 
+  // ---- Zoom de la vista previa ----
+  let pz = 1;
+  const pzOut = h('output', { class: 'small' }, '100 %');
+  const setPz = (z: number) => {
+    pz = Math.min(8, Math.max(1, z));
+    pzOut.textContent = `${Math.round(pz * 100)} %`;
+    redraw();
+  };
+  const zoomRow = h(
+    'div',
+    { class: 'row preview-zoom', role: 'group', 'aria-label': 'Zoom de la vista previa' },
+    h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Alejar la vista previa', onclick: () => setPz(pz / 1.5) }, '🔍−'),
+    pzOut,
+    h('button', { type: 'button', class: 'btn-icon', 'aria-label': 'Acercar la vista previa', onclick: () => setPz(pz * 1.5) }, '🔍+'),
+    h('button', { type: 'button', class: 'btn ghost small', onclick: () => setPz(1) }, 'Ver todo'),
+  );
+  const canvasWrap = h('div', { class: 'canvas-wrap' }, canvas, empty);
+
+  // ---- Pestañas Imagen / Fondo / Letras / Sticker ----
+  const tabBtns: HTMLButtonElement[] = [];
+  const tabPanels: HTMLElement[] = [];
+  const tabsBar = h('div', { class: 'ed-tabs', role: 'tablist', 'aria-label': 'Partes del pin' });
+  const selectTab = (id: EditorTab['id']) => {
+    tabsIn.forEach((t, i) => {
+      const on = t.id === id;
+      tabBtns[i].setAttribute('aria-selected', String(on));
+      tabPanels[i].hidden = !on;
+    });
+    if (state.brush.mode !== 'off' && id !== 'image') state.brush.mode = 'off';
+    state.dragTarget = id;
+    emit('view');
+  };
+  tabsIn.forEach((t) => {
+    const b = h('button', { type: 'button', role: 'tab', class: 'ed-tab', 'aria-selected': 'false', onclick: () => selectTab(t.id) }, t.label);
+    tabBtns.push(b);
+    tabsBar.append(b);
+    const content = t.id === 'image' ? [brushRow, wandBox, ...t.content] : t.content;
+    tabPanels.push(h('div', { class: 'ed-panel', role: 'tabpanel', hidden: true }, ...content));
+  });
+  const syncTabs = () => tabsIn.forEach((t, i) => {
+    tabBtns[i].setAttribute('aria-selected', String(state.dragTarget === t.id));
+    tabPanels[i].hidden = state.dragTarget !== t.id;
+  });
+
   const layout = h(
     'section',
     { class: 'card preview', 'aria-labelledby': 'editor-title' },
     h('div', { class: 'row between' }, title, h('div', { class: 'row' }, undoBtn, redoBtn)),
     h('div', { class: 'row wrap' }, h('label', { for: 'ed-size' }, 'Molde'), sizeSelect, h('label', { class: 'check', for: 'finished' }, finishedChk, ' Ver pin terminado')),
     h('div', { class: 'row wrap' }, h('span', { class: 'label', id: 'drag-lbl' }, 'Al arrastrar mueves:'), h('div', { class: 'segmented', role: 'group', 'aria-labelledby': 'drag-lbl' }, ...targetBtns), centerBtn),
-    h('div', { class: 'canvas-wrap' }, canvas, empty),
+    zoomRow,
+    canvasWrap,
     note,
     warn,
-    brushRow,
+    ...(tabsIn.length ? [tabsBar, ...tabPanels] : [brushRow, wandBox]),
     h('div', { class: 'quick' }, h('span', { class: 'label' }, 'Estilos rápidos'), h('div', { class: 'chips' }, ...presetBtns)),
     h('div', { class: 'row wrap' }, styleAll, allSizes, batchBtn),
   );
@@ -214,8 +340,17 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
     const s = sizeById(d.sizeId);
     geo = renderPreview(canvas, d, s, imagesFor(d), {
       finished: state.finished,
-      overlay: brushing || state.brush.mode !== 'off' ? (ctx) => drawBrushOverlay(ctx, d, s) : undefined,
+      zoom: pz,
+      overlay:
+        brushing || state.brush.mode !== 'off'
+          ? (ctx) => {
+              drawBrushOverlay(ctx, d, s);
+              if (state.brush.mode === 'wand') drawWandOverlay(ctx, d, s, performance.now());
+            }
+          : undefined,
     });
+    // El borde de la selección "late": seguir dibujando mientras haya selección.
+    if (state.brush.mode === 'wand' && hasSelection()) scheduleAnim();
     note.textContent = state.finished
       ? 'Así se verá el pin terminado: solo la cara visible.'
       : `La zona sombreada (${fmtNum(foldMargin(s))} mm) se dobla detrás de la chapa y no se verá. Pon lo importante dentro de la línea punteada.`;
@@ -238,6 +373,9 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
     brushBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(state.brush.mode === brushes[i][0])));
     brushRow.classList.toggle('active', state.brush.mode !== 'off');
     canvas.classList.toggle('brush', state.brush.mode !== 'off');
+    wandBox.hidden = state.brush.mode !== 'wand';
+    brushSizeBox.hidden = state.brush.mode === 'wand' || state.brush.mode === 'off';
+    syncTabs();
     undoBtn.disabled = !canUndo();
     redoBtn.disabled = !canRedo();
   }
@@ -246,6 +384,15 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
     if (k.has('list') || k.has('design') || k.has('view') || k.has('sizes')) refreshControls();
     redraw();
   });
+  onWandChanged(() => redraw());
+  let animT = 0;
+  function scheduleAnim() {
+    if (animT) return;
+    animT = window.setTimeout(() => {
+      animT = 0;
+      if (state.brush.mode === 'wand' && hasSelection()) redraw();
+    }, 80);
+  }
 
   /* ---------- Arrastrar, pellizcar, rueda, pincel ---------- */
   const pointers = new Map<number, { x: number; y: number }>();
@@ -337,6 +484,12 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
     if (!d || state.finished) return;
     canvas.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (state.brush.mode === 'wand') {
+      pointers.delete(e.pointerId);
+      const p = toMm(e);
+      wandClick(d, sizeById(d.sizeId), p.x, p.y, { shift: e.shiftKey, alt: e.altKey });
+      return;
+    }
     if (state.brush.mode !== 'off' && pointers.size === 1) {
       brushing = true;
       checkpoint();
@@ -353,7 +506,7 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
     const d = current();
     if (!d || !pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (brushing && state.brush.mode !== 'off') {
+    if (brushing && (state.brush.mode === 'erase' || state.brush.mode === 'restore')) {
       const p = toMm(e);
       brushTo(d, sizeById(d.sizeId), p.x, p.y, state.brush.mode, state.brush.size, state.brush.hardness, false);
       redraw();
@@ -407,6 +560,11 @@ export function createEditor(): { el: HTMLElement; redraw: () => void } {
   canvas.addEventListener(
     'wheel',
     (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        setPz(pz * (e.deltaY < 0 ? 1.25 : 1 / 1.25));
+        return;
+      }
       const d = current();
       if (!d || state.finished || state.brush.mode !== 'off') return;
       e.preventDefault();

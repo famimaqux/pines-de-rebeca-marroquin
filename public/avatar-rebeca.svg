@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Avatar provisional estilo anime">
+  <!-- Avatar PROVISIONAL (dibujo original): reemplazar por el avatar de Rebeca -->
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="35%" r="75%">
+      <stop offset="0" stop-color="#C4B5FD"/>
+      <stop offset="0.55" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#4C1D95"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F0ABFC"/>
+      <stop offset="0.5" stop-color="#67E8F9"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <linearGradient id="hair" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B0764"/>
+      <stop offset="1" stop-color="#6D28D9"/>
+    </linearGradient>
+    <linearGradient id="iris" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0E7490"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <clipPath id="face"><circle cx="60" cy="60" r="50"/></clipPath>
+  </defs>
+  <circle cx="60" cy="60" r="58" fill="url(#ring)"/>
+  <circle cx="60" cy="60" r="51" fill="#1E1B4B"/>
+  <g clip-path="url(#face)">
+    <circle cx="60" cy="60" r="50" fill="url(#sky)"/>
+    <!-- estrellitas -->
+    <g fill="#FDF4FF" opacity=".9">
+      <path d="M22 30l1.6 3.6 3.6 1.6-3.6 1.6L22 40.4l-1.6-3.6-3.6-1.6 3.6-1.6z"/>
+      <path d="M96 26l1.2 2.7 2.7 1.2-2.7 1.2L96 33.8l-1.2-2.7-2.7-1.2 2.7-1.2z"/>
+      <circle cx="90" cy="48" r="1.4"/><circle cx="28" cy="52" r="1.1"/>
+    </g>
+    <!-- pelo de atrás -->
+    <path d="M22 70c-2-30 14-48 38-48s40 18 38 48c-1 14-4 30-6 40H28c-2-10-5-26-6-40z" fill="url(#hair)"/>
+    <!-- cuello y hombros -->
+    <path d="M50 92h20v10H50z" fill="#FCD7C8"/>
+    <path d="M24 120c3-14 18-22 36-22s33 8 36 22z" fill="#F472B6"/>
+    <path d="M52 99l8 9 8-9" fill="none" stroke="#FDF2F8" stroke-width="3" stroke-linejoin="round"/>
+    <!-- cara -->
+    <ellipse cx="60" cy="66" rx="25" ry="27" fill="#FFE4D6"/>
+    <!-- flequillo -->
+    <path d="M33 62c0-20 12-32 27-32s28 12 28 32c-6-6-10-14-11-20-4 7-11 12-19 14 3-4 4-8 4-11-6 8-15 13-29 17z" fill="url(#hair)"/>
+    <!-- ojos -->
+    <g>
+      <ellipse cx="49" cy="70" rx="6.2" ry="7.6" fill="#1E1B4B"/>
+      <ellipse cx="49" cy="71" rx="4.8" ry="6.2" fill="url(#iris)"/>
+      <circle cx="47" cy="67.5" r="2.2" fill="#fff"/><circle cx="51.2" cy="73.5" r="1" fill="#fff"/>
+      <ellipse cx="71" cy="70" rx="6.2" ry="7.6" fill="#1E1B4B"/>
+      <ellipse cx="71" cy="71" rx="4.8" ry="6.2" fill="url(#iris)"/>
+      <circle cx="69" cy="67.5" r="2.2" fill="#fff"/><circle cx="73.2" cy="73.5" r="1" fill="#fff"/>
+      <path d="M41.5 62.5q7.5-4 15 0M63.5 62.5q7.5-4 15 0" fill="none" stroke="#1E1B4B" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <!-- rubor y boca -->
+    <ellipse cx="41" cy="80" rx="4.5" ry="2.4" fill="#FB7185" opacity=".45"/>
+    <ellipse cx="79" cy="80" rx="4.5" ry="2.4" fill="#FB7185" opacity=".45"/>
+    <path d="M55.5 82.5q4.5 4 9 0" fill="none" stroke="#9F1239" stroke-width="1.8" stroke-linecap="round"/>
+    <!-- moño -->
+    <g transform="translate(84 40) rotate(18)">
+      <path d="M0 0l-10-7v14zM0 0l10-7v14z" fill="#22D3EE"/>
+      <circle r="3" fill="#F0ABFC"/>
+    </g>
+  </g>
+  <!-- brillo de pin -->
+  <path d="M22 40c8-16 24-26 42-27" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".35"/>
+  <circle cx="60" cy="60" r="51" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="1.5"/>
+</svg>

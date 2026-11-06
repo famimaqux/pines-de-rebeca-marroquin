@@ -1,6 +1,7 @@
 import { newDesign, type Design } from './model/design';
 import { DEFAULT_SIZE_ID, loadSizes, saveSizes, type PinSize } from './model/sizes';
 import type { PackAlgo, PageSettings } from './layout/pack';
+import type { Fixed } from './layout/arrange';
 import { loadPaper, paperSize, savePaper, type PaperSettings } from './model/paper';
 import { DEFAULT_GUIDES, type GuideSettings } from './render/sheet';
 
@@ -11,7 +12,7 @@ import { DEFAULT_GUIDES, type GuideSettings } from './render/sheet';
  */
 
 export type DragTarget = 'image' | 'bg' | 'text' | 'sticker';
-export type BrushMode = 'off' | 'erase' | 'restore';
+export type BrushMode = 'off' | 'erase' | 'restore' | 'wand';
 
 /** Ajustes de acomodo (el tamaño del papel sale de `paper`). */
 export interface PageOptions {
@@ -35,8 +36,12 @@ export interface AppState {
   designs: Design[];
   /** pin que se edita en el panel lateral */
   selId: number | null;
-  /** pines seleccionados en la hoja (ids de diseño) */
+  /** diseños seleccionados (los controles de la barra los cambian) */
   selection: Set<number>;
+  /** pines seleccionados en la hoja ("idDiseño:copia"): son los que se mueven */
+  pinSel: Set<string>;
+  /** posiciones fijas: 📌 fijados a mano y, en modo Libre, todos */
+  fixed: Map<string, Fixed>;
   defSizeId: string;
   page: PageOptions;
   guides: GuideSettings;
@@ -58,6 +63,8 @@ export const state: AppState = {
   designs: [],
   selId: null,
   selection: new Set(),
+  pinSel: new Set(),
+  fixed: new Map(),
   defSizeId: DEFAULT_SIZE_ID,
   page: { margin: 5, gap: 1.5, algo: 'auto' },
   guides: { ...DEFAULT_GUIDES },
@@ -120,9 +127,10 @@ export function editTargets(): Design[] {
   return c ? [c] : [];
 }
 
-/** Selecciona estos pines (el primero queda como pin actual). */
+/** Selecciona estos diseños (el primero queda como pin actual). */
 export function selectOnly(ids: number[]): void {
   state.selection = new Set(ids);
+  state.pinSel = new Set();
   if (ids.length) state.selId = ids[0];
   emit('list', 'design', 'view');
 }
@@ -143,6 +151,7 @@ export function setSizes(list: PinSize[]): void {
 interface Snapshot {
   designs: string;
   selId: number | null;
+  fixed: string;
 }
 
 const undoStack: Snapshot[] = [];
@@ -151,7 +160,8 @@ const MAX_HISTORY = 80;
 let lastPush = 0;
 let lastGroup = '';
 
-const snap = (): Snapshot => ({ designs: JSON.stringify(state.designs), selId: state.selId });
+const fixedJson = () => JSON.stringify([...state.fixed]);
+const snap = (): Snapshot => ({ designs: JSON.stringify(state.designs), selId: state.selId, fixed: fixedJson() });
 
 /**
  * Llamar ANTES de modificar los diseños. Los cambios seguidos del mismo
@@ -171,8 +181,8 @@ export function checkpoint(group = ''): void {
 }
 
 /** Guarda en el historial un estado anterior ya tomado (para cambios con vista previa). */
-export function checkpointFrom(designsJson: string, selId: number | null): void {
-  undoStack.push({ designs: designsJson, selId });
+export function checkpointFrom(designsJson: string, selId: number | null, fixedJsonBefore: string = fixedJson()): void {
+  undoStack.push({ designs: designsJson, selId, fixed: fixedJsonBefore });
   if (undoStack.length > MAX_HISTORY) undoStack.shift();
   redoStack.length = 0;
   lastGroup = '';
@@ -181,6 +191,8 @@ export function checkpointFrom(designsJson: string, selId: number | null): void 
 
 function restore(s: Snapshot): void {
   state.designs = JSON.parse(s.designs) as Design[];
+  state.fixed = new Map(JSON.parse(s.fixed) as [string, Fixed][]);
+  state.pinSel = new Set([...state.pinSel].filter((k) => state.designs.some((d) => k.startsWith(`${d.id}:`))));
   state.selId = s.selId && state.designs.some((d) => d.id === s.selId) ? s.selId : (state.designs[0]?.id ?? null);
   for (const id of state.selection) if (!state.designs.some((d) => d.id === id)) state.selection.delete(id);
   lastGroup = '';

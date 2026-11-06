@@ -9,6 +9,8 @@ const SIDE_SPACE = 8;
 
 export interface PreviewOptions {
   finished: boolean;
+  /** zoom de la vista previa (1 = cabe entero) para trabajar bordes pequeños */
+  zoom?: number;
   /** Dibujo extra encima del pin (p. ej. el trazo del pincel), en mm. */
   overlay?: (ctx: CanvasRenderingContext2D) => void;
 }
@@ -27,18 +29,21 @@ export function renderPreview(canvas: HTMLCanvasElement, d: Design, size: PinSiz
   const host = (canvas.closest('.preview') as HTMLElement | null) ?? canvas.parentElement;
   const cssW = Math.max(200, Math.min(480, (host?.clientWidth ?? 380) - 34));
   const maxDim = Math.max(size.cutW, size.cutH);
-  const ppm = (cssW - 2 * SIDE_SPACE) / maxDim;
+  const z = Math.max(1, opts.zoom ?? 1);
+  const ppm = ((cssW - 2 * SIDE_SPACE) / maxDim) * z;
   const cssH = size.cutH * ppm + 2 * LABEL_SPACE;
-  if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
-    canvas.style.width = `${cssW}px`;
+  const fullW = size.cutW * ppm + 2 * SIDE_SPACE;
+  const outW = z > 1 ? fullW : cssW;
+  if (canvas.width !== Math.round(outW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+    canvas.style.width = `${outW}px`;
     canvas.style.height = `${cssH}px`;
-    canvas.width = Math.round(cssW * dpr);
+    canvas.width = Math.round(outW * dpr);
     canvas.height = Math.round(cssH * dpr);
   }
   const ctx = canvas.getContext('2d')!;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.setTransform(dpr * ppm, 0, 0, dpr * ppm, (dpr * cssW) / 2, (dpr * cssH) / 2);
+  ctx.setTransform(dpr * ppm, 0, 0, dpr * ppm, (dpr * outW) / 2, (dpr * cssH) / 2);
 
   if (opts.finished) {
     drawPin(ctx, d, size, imgs, { faceOnly: true });
@@ -48,7 +53,7 @@ export function renderPreview(canvas: HTMLCanvasElement, d: Design, size: PinSiz
     opts.overlay?.(ctx);
     drawEditorGuides(ctx, size, ppm);
   }
-  return { ppm, cssW, cssH };
+  return { ppm, cssW: outW, cssH };
 }
 
 /** Miniatura cuadrada del pin con su línea de corte. */
